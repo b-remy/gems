@@ -30,6 +30,9 @@ def model(stamp_size):
   log_l_hlr = ed.Normal(loc=-.68, scale=.3)
   hlr = tf.math.exp(log_l_hlr * _log10)
 
+  # prior on shear
+  gamma = ed.Normal(loc=tf.zeros((2)), scale=.09)
+
   # PSF model from galsim COSMOS catalog
   cat = galsim.COSMOSCatalog()
   psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
@@ -49,11 +52,16 @@ def model(stamp_size):
   # Flux
   F = 16.693710205567005
 
-  # generate light profile
+  # Generate light profile
   profile = lp.sersic(n, scale_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
 
-  # Convolve the image with the PSF
+  # Shear the image
+  tfg1 = tf.reshape(tf.convert_to_tensor(gamma[0], tf.float32), (1))
+  tfg2 = tf.reshape(tf.convert_to_tensor(gamma[1], tf.float32), (1))
   ims = tf.cast(tf.reshape(profile, (1,stamp_size,stamp_size,1)), tf.float32)
+  ims = galflow.shear(ims, tfg1, tfg2)
+
+  # Convolve the image with the PSF
   profile = galflow.convolve(ims, kpsf,
                       zero_padding_factor=padding_factor,
                       interp_factor=interp_factor)[0,...,0]
