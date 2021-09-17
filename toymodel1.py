@@ -1,16 +1,30 @@
 import edward2 as ed
 import tensorflow as tf
-import numpy as np
-import galsim
-import matplotlib.pyplot as plt
-from absl import app
 
+import numpy as np
+import matplotlib.pyplot as plt
+
+import os
+import fnmatch
+from absl import app
+from absl import flags
+
+import galsim
 import galflow
 lp = galflow.lightprofiles
+
+flags.DEFINE_integer("N", 5, "Number of stamps on x and y axes")
+flags.DEFINE_boolean("plot", False, "Should we plot the simulations?")
+flags.DEFINE_string("prior_path", "toymodel1_prior.txt", "Path to prior parameters")
+flags.DEFINE_string("output_dir", "./data", "Path to output simulations")
+flags.DEFINE_string("model_name", "toymodel1", "Name of the probabilistic model")
+flags.DEFINE_boolean("save", True, "Should we store the simulations?")
 
 _log10 = tf.math.log(10.)
 _scale = 0.03 # COSMOS pixel size in arcsec
 _pi = np.pi
+
+FLAGS = flags.FLAGS
 
 def model(stamp_size):
   """Toy model
@@ -44,7 +58,7 @@ def model(stamp_size):
   bounds = _BoundsI(0, Nk//2, -Nk//2, Nk//2-1)
 
   imkpsf = psf.drawKImage(bounds=bounds,
-                          scale=2.*np.pi/(stamp_size*padding_factor*_scale),
+                          scale=2.*_pi/(stamp_size*padding_factor*_scale),
                           recenter=False)
 
   kpsf = tf.cast(np.fft.fftshift(imkpsf.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
@@ -72,26 +86,36 @@ def model(stamp_size):
 
 def main(_):
   stamp_size = 56
-  N = 5
+  N = FLAGS.N
   sigma_e = 0.003
-  plot = np.zeros((N*stamp_size, N*stamp_size))
+  sims = np.zeros((N*stamp_size, N*stamp_size))
   
-  sep = dict(color='k', linestyle=':', linewidth=.5)
-  plt.figure()
   for i in range(N):
-    if i>0:
-      plt.axvline(x=i*stamp_size, **sep)
-      plt.axhline(y=i*stamp_size, **sep)
     for j in range(N):
+      sims[i*stamp_size:(i+1)*stamp_size, j*stamp_size:(j+1)*stamp_size] = model(stamp_size)
+
+  if FLAGS.save:
+    file_root = "sims_"
+    file_name = file_root + FLAGS.model_name + "_" + str(len(fnmatch.filter(os.listdir(FLAGS.output_dir), file_root + FLAGS.model_name + "*"))) + ".npy"
+    file_path = os.path.join(FLAGS.output_dir, file_name)
+    print(os.path.dirname(FLAGS.output_dir))
+    print(file_path)
+    np.save(file_path, sims)
+
+  if FLAGS.plot:
+    sep = dict(color='k', linestyle=':', linewidth=.5)
+    plt.figure()
+    for i in range(N):
       if i>0:
         plt.axvline(x=i*stamp_size, **sep)
         plt.axhline(y=i*stamp_size, **sep)
-      plot[i*stamp_size:(i+1)*stamp_size, j*stamp_size:(j+1)*stamp_size] = np.arcsinh(model(stamp_size)/sigma_e)*sigma_e
-  
-  plt.imshow(plot, cmap='Greys')
-  plt.title(r'$Arcsinh(\frac{X}{\sigma})\cdot \sigma$')
-  plt.colorbar()
-  plt.show()
+        plt.axvline(x=i*stamp_size, **sep)
+        plt.axhline(y=i*stamp_size, **sep)
+    
+    plt.imshow(np.arcsinh(sims/sigma_e)*sigma_e, cmap='Greys')
+    plt.title(r'$Arcsinh(\frac{X}{\sigma})\cdot \sigma$')
+    plt.colorbar()
+    plt.show()
 
 if __name__ == "__main__":
   app.run(main)
