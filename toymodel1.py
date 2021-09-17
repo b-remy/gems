@@ -16,7 +16,7 @@ lp = galflow.lightprofiles
 flags.DEFINE_integer("N", 5, "Number of stamps on x and y axes")
 flags.DEFINE_boolean("plot", False, "Should we plot the simulations?")
 flags.DEFINE_string("prior_path", "toymodel1_prior.txt", "Path to prior parameters")
-flags.DEFINE_string("output_dir", "./data", "Path to output simulations")
+flags.DEFINE_string("output_dir", "data", "Path to output simulations")
 flags.DEFINE_string("model_name", "toymodel1", "Name of the probabilistic model")
 flags.DEFINE_boolean("save", True, "Should we store the simulations?")
 
@@ -98,8 +98,6 @@ def main(_):
     file_root = "sims_"
     file_name = file_root + FLAGS.model_name + "_" + str(len(fnmatch.filter(os.listdir(FLAGS.output_dir), file_root + FLAGS.model_name + "*"))) + ".npy"
     file_path = os.path.join(FLAGS.output_dir, file_name)
-    print(os.path.dirname(FLAGS.output_dir))
-    print(file_path)
     np.save(file_path, sims)
 
   if FLAGS.plot:
