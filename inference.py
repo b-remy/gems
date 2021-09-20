@@ -50,6 +50,7 @@ def main(_):
 
   kpsf = tf.cast(np.fft.fftshift(imkpsf.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
 
+  gamma = tf.zeros(2)
   # Flux
   F = 16.693710205567005
     
@@ -63,10 +64,10 @@ def main(_):
     hlr = tf.math.exp(log_l_hlr * _log10)
 
     # prior on shear
-    gamma = ed.Normal(loc=tf.zeros((2)), scale=.09, name="shear")
+    #gamma = ed.Normal(loc=tf.zeros((2)), scale=.09, name="shear")
 
     # Generate light profile
-    profile = lp.sersic(n, scale_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
+    profile = lp.sersic(n, half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
 
     # Shear the image
     tfg1 = tf.reshape(tf.convert_to_tensor(gamma[0], tf.float32), (1))
@@ -89,7 +90,7 @@ def main(_):
   # Target log-probability function
   log_joint = ed.make_log_joint_fn(model)
 
-  def target_log_prob_fn(n, hlr, g1, g2):
+  def target_log_prob_fn(n, hlr):#, g1, g2):
     # = state
     gamma = [g1, g2]
     return log_joint(n=n, hlr=hlr, shear=gamma, target=y)
@@ -99,7 +100,7 @@ def main(_):
   #gamma = tf.zeros(2)#.5 * tf.ones(2)
   g1 = 0.
   g2 = 0.
-  print(target_log_prob_fn(n=n, hlr=hlr, g1=g1, g2=g2))
+  print(target_log_prob_fn(n=n, hlr=hlr))#, g1=g1, g2=g2))
 
   n_init = tf.math.exp(tfd.Normal(loc=1., scale=.39).sample() * _log10)
   hlr_init = tf.math.exp(tfd.Normal(loc=-.68, scale=.3).sample() * _log10)
@@ -107,13 +108,13 @@ def main(_):
   target_log_prob = None
   grads_target_log_prob = None
 
-  num_results = int(1e3)
+  num_results = int(3e3)
   num_burnin_steps = int(1e2)
   adaptive_hmc = tfp.mcmc.SimpleStepSizeAdaptation(
     tfp.mcmc.HamiltonianMonteCarlo(
         target_log_prob_fn=target_log_prob_fn,
         num_leapfrog_steps=3,
-        step_size=.001),
+        step_size=.01),
     num_adaptation_steps=int(num_burnin_steps * 0.8))
 
   # Run the chain (with burn-in).
@@ -124,20 +125,22 @@ def main(_):
         num_results=num_results,
         num_burnin_steps=num_burnin_steps,
         #current_state=[n_init, hlr_init, gamma_init],
-        current_state=[n, hlr, g1, g2],
+        current_state=[n, hlr],
+        #current_state=[n, hlr, g1, g2],
         kernel=adaptive_hmc,
         trace_fn=lambda _, pkr: pkr.inner_results.is_accepted)
 
     sample_mean = tf.reduce_mean(samples)
     sample_stddev = tf.math.reduce_std(samples)
     is_accepted = tf.reduce_mean(tf.cast(is_accepted, dtype=tf.float32))
-    return samples#sample_mean, sample_stddev, is_accepted
+    return samples # sample_mean, sample_stddev, is_accepted
   
-  samples_n, samples_hlr, samples_g1, samples_g2 = run_chain()
-  print("n", tf.reduce_mean(samples_n).numpy())
-  print("hlr", tf.reduce_mean(samples_hlr).numpy())
-  print("g1", tf.reduce_mean(samples_g1).numpy())
-  print("g2", tf.reduce_mean(samples_g2).numpy())
+  #samples_n, samples_hlr, samples_g1, samples_g2 = run_chain()
+  samples_n, samples_hlr = run_chain()
+  print("n", tf.reduce_mean(samples_n).numpy(),  "+/-", tf.math.reduce_std(samples_n).numpy())
+  print("hlr", tf.reduce_mean(samples_hlr).numpy(),  "+/-", tf.math.reduce_std(samples_hlr).numpy())
+  #print("g1", tf.reduce_mean(samples_g1).numpy())
+  #print("g2", tf.reduce_mean(samples_g2).numpy())
 
   # print("Let's run for {} burn-in and {} chain steps".format(num_burnin_steps, num_results))
   # sample_mean, sample_stddev, is_accepted = run_chain()
