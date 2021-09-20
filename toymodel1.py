@@ -14,11 +14,11 @@ import galflow
 lp = galflow.lightprofiles
 
 flags.DEFINE_integer("N", 5, "Number of stamps on x and y axes")
-flags.DEFINE_boolean("plot", False, "Should we plot the simulations?")
-flags.DEFINE_string("prior_path", "toymodel1_prior.txt", "Path to prior parameters")
+flags.DEFINE_boolean("plot", True, "Should we plot the simulations?")
+# flags.DEFINE_string("prior_path", "toymodel1_prior.txt", "Path to prior parameters")
 flags.DEFINE_string("output_dir", "data", "Path to output simulations")
 flags.DEFINE_string("model_name", "toymodel1", "Name of the probabilistic model")
-flags.DEFINE_boolean("save", True, "Should we store the simulations?")
+flags.DEFINE_boolean("save", False, "Should we store the simulations?")
 
 _log10 = tf.math.log(10.)
 _scale = 0.03 # COSMOS pixel size in arcsec
@@ -46,6 +46,7 @@ def model(stamp_size):
 
   # prior on shear
   gamma = ed.Normal(loc=tf.zeros((2)), scale=.09)
+  # gamma = tf.zeros(2)
 
   # PSF model from galsim COSMOS catalog
   cat = galsim.COSMOSCatalog()
@@ -67,13 +68,17 @@ def model(stamp_size):
   F = 16.693710205567005
 
   # Generate light profile
-  profile = lp.sersic(n, scale_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
+  profile = lp.sersic(n, half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
 
   # Shear the image
   tfg1 = tf.reshape(tf.convert_to_tensor(gamma[0], tf.float32), (1))
   tfg2 = tf.reshape(tf.convert_to_tensor(gamma[1], tf.float32), (1))
   ims = tf.cast(tf.reshape(profile, (1,stamp_size,stamp_size,1)), tf.float32)
   ims = galflow.shear(ims, tfg1, tfg2)
+
+  # print("n", n.numpy())
+  # print("hlr", hlr.numpy())
+  # print("e1 e2", gamma.numpy())
 
   # Convolve the image with the PSF
   profile = galflow.convolve(ims, kpsf,
@@ -85,7 +90,7 @@ def model(stamp_size):
   return image
 
 def main(_):
-  stamp_size = 56
+  stamp_size = 64
   N = FLAGS.N
   sigma_e = 0.003
   sims = np.zeros((N*stamp_size, N*stamp_size))
