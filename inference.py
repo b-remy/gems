@@ -89,14 +89,17 @@ def main(_):
   # Target log-probability function
   log_joint = ed.make_log_joint_fn(model)
 
-  def target_log_prob_fn(n, hlr, gamma):
+  def target_log_prob_fn(n, hlr, g1, g2):
     # = state
+    gamma = [g1, g2]
     return log_joint(n=n, hlr=hlr, shear=gamma, target=y)
 
   n = 1.
   hlr = 1.
-  gamma = tf.zeros(2)#.5 * tf.ones(2)
-  print(target_log_prob_fn(n=n, hlr=hlr, gamma=gamma))
+  #gamma = tf.zeros(2)#.5 * tf.ones(2)
+  g1 = 0.
+  g2 = 0.
+  print(target_log_prob_fn(n=n, hlr=hlr, g1=g1, g2=g2))
 
   n_init = tf.math.exp(tfd.Normal(loc=1., scale=.39).sample() * _log10)
   hlr_init = tf.math.exp(tfd.Normal(loc=-.68, scale=.3).sample() * _log10)
@@ -104,8 +107,8 @@ def main(_):
   target_log_prob = None
   grads_target_log_prob = None
 
-  num_results = int(10e3)
-  num_burnin_steps = int(1e3)
+  num_results = int(1e3)
+  num_burnin_steps = int(1e2)
   adaptive_hmc = tfp.mcmc.SimpleStepSizeAdaptation(
     tfp.mcmc.HamiltonianMonteCarlo(
         target_log_prob_fn=target_log_prob_fn,
@@ -121,20 +124,27 @@ def main(_):
         num_results=num_results,
         num_burnin_steps=num_burnin_steps,
         #current_state=[n_init, hlr_init, gamma_init],
-        current_state=[n, hlr, gamma],
+        current_state=[n, hlr, g1, g2],
         kernel=adaptive_hmc,
         trace_fn=lambda _, pkr: pkr.inner_results.is_accepted)
 
     sample_mean = tf.reduce_mean(samples)
     sample_stddev = tf.math.reduce_std(samples)
     is_accepted = tf.reduce_mean(tf.cast(is_accepted, dtype=tf.float32))
-    return sample_mean, sample_stddev, is_accepted
+    return samples#sample_mean, sample_stddev, is_accepted
+  
+  samples_n, samples_hlr, samples_g1, samples_g2 = run_chain()
+  print("n", tf.reduce_mean(samples_n).numpy())
+  print("hlr", tf.reduce_mean(samples_hlr).numpy())
+  print("g1", tf.reduce_mean(samples_g1).numpy())
+  print("g2", tf.reduce_mean(samples_g2).numpy())
 
-  print("Let's run for {} burn-in and {} steps".format(num_burnin_steps, num_results))
-  sample_mean, sample_stddev, is_accepted = run_chain()
+  # print("Let's run for {} burn-in and {} chain steps".format(num_burnin_steps, num_results))
+  # sample_mean, sample_stddev, is_accepted = run_chain()
 
-  print('mean:{:.4f}  stddev:{:.4f}  acceptance:{:.4f}'.format(
-    sample_mean.numpy(), sample_stddev.numpy(), is_accepted.numpy()))
+  # print(samples.shape)
+  # print('mean:{:.4f}  stddev:{:.4f}  acceptance:{:.4f}'.format(
+  #   sample_mean.numpy(), sample_stddev.numpy(), is_accepted.numpy()))
 
 if __name__ == "__main__":
   app.run(main)
