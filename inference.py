@@ -1,5 +1,7 @@
 import edward2 as ed
 import tensorflow as tf
+import tensorflow_probability as tfp
+tfd = tfp.distributions
 
 import numpy as np
 
@@ -88,12 +90,51 @@ def main(_):
   log_joint = ed.make_log_joint_fn(model)
 
   def target_log_prob_fn(n, hlr, gamma):
+    # = state
     return log_joint(n=n, hlr=hlr, shear=gamma, target=y)
 
   n = 1.
   hlr = 1.
-  gamma = tf.zeros(2)
+  gamma = tf.zeros(2)#.5 * tf.ones(2)
   print(target_log_prob_fn(n=n, hlr=hlr, gamma=gamma))
+
+  n_init = tf.math.exp(tfd.Normal(loc=1., scale=.39).sample() * _log10)
+  hlr_init = tf.math.exp(tfd.Normal(loc=-.68, scale=.3).sample() * _log10)
+  gamma_init = tf.math.exp(tfd.MultivariateNormalDiag(loc=[0., 0.], scale_identity_multiplier=.09).sample() * _log10)
+  target_log_prob = None
+  grads_target_log_prob = None
+
+  num_results = int(10e3)
+  num_burnin_steps = int(1e3)
+  adaptive_hmc = tfp.mcmc.SimpleStepSizeAdaptation(
+    tfp.mcmc.HamiltonianMonteCarlo(
+        target_log_prob_fn=target_log_prob_fn,
+        num_leapfrog_steps=3,
+        step_size=.001),
+    num_adaptation_steps=int(num_burnin_steps * 0.8))
+
+  # Run the chain (with burn-in).
+  #@tf.function
+  def run_chain():
+    # Run the chain (with burn-in).
+    samples, is_accepted = tfp.mcmc.sample_chain(
+        num_results=num_results,
+        num_burnin_steps=num_burnin_steps,
+        #current_state=[n_init, hlr_init, gamma_init],
+        current_state=[n, hlr, gamma],
+        kernel=adaptive_hmc,
+        trace_fn=lambda _, pkr: pkr.inner_results.is_accepted)
+
+    sample_mean = tf.reduce_mean(samples)
+    sample_stddev = tf.math.reduce_std(samples)
+    is_accepted = tf.reduce_mean(tf.cast(is_accepted, dtype=tf.float32))
+    return sample_mean, sample_stddev, is_accepted
+
+  print("Let's run for {} burn-in and {} steps".format(num_burnin_steps, num_results))
+  sample_mean, sample_stddev, is_accepted = run_chain()
+
+  print('mean:{:.4f}  stddev:{:.4f}  acceptance:{:.4f}'.format(
+    sample_mean.numpy(), sample_stddev.numpy(), is_accepted.numpy()))
 
 if __name__ == "__main__":
   app.run(main)
