@@ -26,7 +26,7 @@ _pi = np.pi
 
 FLAGS = flags.FLAGS
 
-def model(stamp_size):
+def model(batch_size, stamp_size):
   """Toy model
   """
   # stamp size
@@ -34,18 +34,18 @@ def model(stamp_size):
 
   # pixel noise std
   sigma_e = 0.003
-  noise = ed.Normal(loc=tf.zeros((nx, ny)), scale=sigma_e)
+  noise = ed.Normal(loc=tf.zeros((batch_size, nx, ny)), scale=sigma_e)
 
   # prior on Sersic index n
-  log_l_n = ed.Normal(loc=.1, scale=.39)
+  log_l_n = ed.Normal(loc=.1*tf.ones(batch_size), scale=.39)
   n = tf.math.exp(log_l_n * _log10)
 
   # prior on Sersic size half light radius
-  log_l_hlr = ed.Normal(loc=-.68, scale=.3)
+  log_l_hlr = ed.Normal(loc=-.68*tf.ones(batch_size), scale=.3)
   hlr = tf.math.exp(log_l_hlr * _log10)
 
   # prior on shear
-  gamma = ed.Normal(loc=tf.zeros((2)), scale=.09)
+  gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=.09)
   # gamma = tf.zeros(2)
 
   # PSF model from galsim COSMOS catalog
@@ -65,25 +65,20 @@ def model(stamp_size):
   kpsf = tf.cast(np.fft.fftshift(imkpsf.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
 
   # Flux
-  F = 16.693710205567005
-
+  F = 16.693710205567005 * tf.ones(batch_size)
+  # print(n)
   # Generate light profile
   profile = lp.sersic(n, half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
 
   # Shear the image
-  tfg1 = tf.reshape(tf.convert_to_tensor(gamma[0], tf.float32), (1))
-  tfg2 = tf.reshape(tf.convert_to_tensor(gamma[1], tf.float32), (1))
-  ims = tf.cast(tf.reshape(profile, (1,stamp_size,stamp_size,1)), tf.float32)
+  tfg1 = tf.reshape(gamma[:, 0], (batch_size))
+  tfg2 = tf.reshape(gamma[:, 1], (batch_size))
+  ims = tf.cast(tf.reshape(profile, (batch_size,stamp_size,stamp_size,1)), tf.float32)
   ims = galflow.shear(ims, tfg1, tfg2)
-
-  # print("n", n.numpy())
-  # print("hlr", hlr.numpy())
-  # print("e1 e2", gamma.numpy())
-
   # Convolve the image with the PSF
   profile = galflow.convolve(ims, kpsf,
                       zero_padding_factor=padding_factor,
-                      interp_factor=interp_factor)[0,...,0]
+                      interp_factor=interp_factor)[...,0]
 
   # Add noise
   image = profile + noise
@@ -92,18 +87,23 @@ def model(stamp_size):
 def main(_):
   stamp_size = 64
   N = FLAGS.N
+  batch_size = N*N
   sigma_e = 0.003
-  sims = np.zeros((N*stamp_size, N*stamp_size))
-  
+
+  sims = model(batch_size, stamp_size)
+
+  sims_reshaped = np.zeros((N*stamp_size, N*stamp_size))
+
   for i in range(N):
     for j in range(N):
-      sims[i*stamp_size:(i+1)*stamp_size, j*stamp_size:(j+1)*stamp_size] = model(stamp_size)
+      sims_reshaped[i*stamp_size:(i+1)*stamp_size, j*stamp_size:(j+1)*stamp_size] = sims[i+N*j, ...]
+
 
   if FLAGS.save:
     file_root = "sims_"
     file_name = file_root + FLAGS.model_name + "_" + str(len(fnmatch.filter(os.listdir(FLAGS.output_dir), file_root + FLAGS.model_name + "*"))) + ".npy"
     file_path = os.path.join(FLAGS.output_dir, file_name)
-    np.save(file_path, sims)
+    np.save(file_path, sims_reshaped)
 
   if FLAGS.plot:
     sep = dict(color='k', linestyle=':', linewidth=.5)
@@ -115,7 +115,7 @@ def main(_):
         plt.axvline(x=i*stamp_size, **sep)
         plt.axhline(y=i*stamp_size, **sep)
     
-    plt.imshow(np.arcsinh(sims/sigma_e)*sigma_e, cmap='Greys')
+    plt.imshow(np.arcsinh(sims_reshaped/sigma_e)*sigma_e, cmap='Greys')
     plt.title(r'$Arcsinh(\frac{X}{\sigma})\cdot \sigma$')
     plt.colorbar()
     plt.show()
