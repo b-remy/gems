@@ -1,5 +1,5 @@
-import edward2 as ed
 import tensorflow as tf
+import edward2 as ed
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -26,6 +26,23 @@ _pi = np.pi
 
 FLAGS = flags.FLAGS
 
+stamp_size = 64
+# PSF model from galsim COSMOS catalog
+cat = galsim.COSMOSCatalog()
+psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
+
+interp_factor=2
+padding_factor=2
+Nk = stamp_size*interp_factor*padding_factor
+from galsim.bounds import _BoundsI
+bounds = _BoundsI(0, Nk//2, -Nk//2, Nk//2-1)
+
+imkpsf = psf.drawKImage(bounds=bounds,
+                        scale=2.*_pi/(stamp_size*padding_factor*_scale),
+                        recenter=False)
+kpsf = tf.cast(np.fft.fftshift(imkpsf.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
+
+@tf.function
 def model(batch_size, stamp_size):
   """Toy model
   """
@@ -48,31 +65,23 @@ def model(batch_size, stamp_size):
   gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=.09)
   # gamma = tf.zeros(2)
 
-  # PSF model from galsim COSMOS catalog
-  cat = galsim.COSMOSCatalog()
-  psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
-
-  interp_factor=2
-  padding_factor=2
-  Nk = stamp_size*interp_factor*padding_factor
-  from galsim.bounds import _BoundsI
-  bounds = _BoundsI(0, Nk//2, -Nk//2, Nk//2-1)
-
-  imkpsf = psf.drawKImage(bounds=bounds,
-                          scale=2.*_pi/(stamp_size*padding_factor*_scale),
-                          recenter=False)
-
-  kpsf = tf.cast(np.fft.fftshift(imkpsf.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
-
   # Flux
   F = 16.693710205567005 * tf.ones(batch_size)
   # print(n)
   # Generate light profile
   profile = lp.sersic(n, half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
 
+  # print(n.numpy())
+  # print(lp.calculate_b(n).numpy())
+
+  # # INVESTIGATE NANS !!!!!!!
+  # for i in range(batch_size):
+  #   if tf.reduce_any(tf.math.is_nan(profile[i,...])):
+  #     print(i, n[i].numpy(), lp.calculate_b(n[i]).numpy())
+
   # Shear the image
-  tfg1 = tf.reshape(gamma[:, 0], (batch_size))
-  tfg2 = tf.reshape(gamma[:, 1], (batch_size))
+  tfg1 = gamma[:, 0]
+  tfg2 = gamma[:, 1]
   ims = tf.cast(tf.reshape(profile, (batch_size,stamp_size,stamp_size,1)), tf.float32)
   ims = galflow.shear(ims, tfg1, tfg2)
   # Convolve the image with the PSF
@@ -92,12 +101,13 @@ def main(_):
 
   sims = model(batch_size, stamp_size)
 
-  sims_reshaped = np.zeros((N*stamp_size, N*stamp_size))
+  # sims_reshaped = np.zeros((N*stamp_size, N*stamp_size))
 
-  for i in range(N):
-    for j in range(N):
-      sims_reshaped[i*stamp_size:(i+1)*stamp_size, j*stamp_size:(j+1)*stamp_size] = sims[i+N*j, ...]
-
+  # for i in range(N):
+  #   for j in range(N):
+  #     sims_reshaped[i*stamp_size:(i+1)*stamp_size, j*stamp_size:(j+1)*stamp_size] = sims[i+N*j, ...]
+  
+  sims_reshaped = sims.numpy().reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
 
   if FLAGS.save:
     file_root = "sims_"
@@ -115,7 +125,7 @@ def main(_):
         plt.axvline(x=i*stamp_size, **sep)
         plt.axhline(y=i*stamp_size, **sep)
     
-    plt.imshow(np.arcsinh(sims_reshaped/sigma_e)*sigma_e, cmap='Greys')
+    plt.imshow(np.arcsinh(sims_reshaped/sigma_e)*sigma_e, cmap='gray_r')
     plt.title(r'$Arcsinh(\frac{X}{\sigma})\cdot \sigma$')
     plt.colorbar()
     plt.show()
