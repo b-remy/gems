@@ -4,6 +4,7 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 import os
 import fnmatch
@@ -20,134 +21,157 @@ _pi = np.pi
 
 def main(_):
 
-  y = tf.convert_to_tensor(np.load("data/stamp.npy"), dtype=tf.float32)
-  print(y.shape)
+    # PSF model from galsim COSMOS catalog
+    stamp_size = 64
+    psf = galsim.Gaussian(0.06)
 
-  # INPUTS
-  stamp_size = y.shape[0]
-  # N = 5
+    interp_factor=2
+    padding_factor=2
+    Nk = stamp_size*interp_factor*padding_factor
+    from galsim.bounds import _BoundsI
+    bounds = _BoundsI(0, Nk//2, -Nk//2, Nk//2-1)
 
-  # stamp size
-  nx = ny = stamp_size
+    imkpsf = psf.drawKImage(bounds=bounds,
+                            scale=2.*_pi/(stamp_size*padding_factor*_scale),
+                            recenter=False)
 
-  # pixel noise std
-  sigma_e = 0.003
-  # noise = ed.Normal(loc=tf.zeros((nx, ny)), scale=sigma_e, name="noise")
+    kpsf = tf.cast(np.fft.fftshift(imkpsf.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
 
-  # PSF model from galsim COSMOS catalog
-  cat = galsim.COSMOSCatalog()
-  psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
+    def model(batch_size=16, stamp_size=64):
+        """Toy model
+        """
+        # stamp size
+        nx = ny = stamp_size
 
-  interp_factor=2
-  padding_factor=2
-  Nk = stamp_size*interp_factor*padding_factor
-  from galsim.bounds import _BoundsI
-  bounds = _BoundsI(0, Nk//2, -Nk//2, Nk//2-1)
+        # pixel noise std
+        sigma_e = 0.003
 
-  imkpsf = psf.drawKImage(bounds=bounds,
-                          scale=2.*_pi/(stamp_size*padding_factor*_scale),
-                          recenter=False)
+        # prior on Sersic index n
+        log_l_n = ed.Normal(loc=.1*tf.ones(batch_size), scale=.39, name="n")
+        n = tf.math.exp(log_l_n * _log10)
 
-  kpsf = tf.cast(np.fft.fftshift(imkpsf.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
+        # prior on Sersic size half light radius
+        log_l_hlr = ed.Normal(loc=-.68*tf.ones(batch_size), scale=.3, name="hlr")
+        hlr = tf.math.exp(log_l_hlr * _log10)
 
-  gamma = tf.zeros(2)
-  # Flux
-  F = 16.693710205567005
-    
-  def model(target):
-    # prior on Sersic index n
-    log_l_n = ed.Normal(loc=.1, scale=.39, name="n")
-    n = tf.math.exp(log_l_n * _log10)
+        # prior on intrinsic galaxy ellipticity
+        e = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=.2, name="e")
 
-    # prior on Sersic size half light radius
-    log_l_hlr = ed.Normal(loc=-.68, scale=.3, name="hlr")
-    hlr = tf.math.exp(log_l_hlr * _log10)
+        # Constant shear in the field
+        gamma = ed.Normal(loc=tf.zeros((2,)), scale=0.05, name="gamma")
+        
+        # Flux
+        F = 16.693710205567005 * tf.ones(batch_size)
 
-    # prior on shear
-    #gamma = ed.Normal(loc=tf.zeros((2)), scale=.09, name="shear")
+        # Generate light profile
+        profile = lp.sersic(n, half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
 
-    # Generate light profile
-    profile = lp.sersic(n, half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
+        # Apply intrinsic ellipticity on profiles the image
+        tfg1 = e[:, 0]
+        tfg2 = e[:, 1]
+        ims = tf.cast(tf.reshape(profile, (batch_size,stamp_size,stamp_size,1)), tf.float32)
+        ims = galflow.shear(ims, tfg1, tfg2)
 
-    # Shear the image
-    tfg1 = tf.reshape(tf.convert_to_tensor(gamma[0], tf.float32), (1))
-    tfg2 = tf.reshape(tf.convert_to_tensor(gamma[1], tf.float32), (1))
-    ims = tf.cast(tf.reshape(profile, (1,stamp_size,stamp_size,1)), tf.float32)
-    ims = galflow.shear(ims, tfg1, tfg2)
+        # Apply same shear on all images
+        ims = galflow.shear(ims, 
+                            gamma[0]*tf.ones(batch_size),
+                            gamma[1]*tf.ones(batch_size))
 
-    # Convolve the image with the PSF
-    profile = galflow.convolve(ims, kpsf,
-                        zero_padding_factor=padding_factor,
-                        interp_factor=interp_factor)[0,...,0]
+        # Convolve the image with the PSF
+        profile = galflow.convolve(ims, kpsf,
+                            zero_padding_factor=padding_factor,
+                            interp_factor=interp_factor)[...,0]
 
-    # Evaluate likelihood
-    # image = profile + noise
-    Z = tf.math.pow(tf.math.sqrt(2*_pi) * sigma_e, stamp_size**2)
-    l = tf.math.exp(tf.reduce_sum((target - profile)*(target - profile)) / (2*sigma_e*sigma_e)) / Z
+        # Returns likelihood
+        return ed.Normal(loc=profile, scale=sigma_e, name="obs")
 
-    return l
+    # Execute probabilistic program and record execution trace
+    with ed.tape() as true_params:
+        ims = model(16, 64)
 
-  # Target log-probability function
-  log_joint = ed.make_log_joint_fn(model)
+    # Display things
+    res = ims.numpy().reshape(4,4,64,64).transpose([0,2,1,3]).reshape([4*64,4*64])
+    # plt.figure()
+    # plt.imshow(res, cmap='gray_r')
 
-  def target_log_prob_fn(n, hlr):#, g1, g2):
-    # = state
-    gamma = [g1, g2]
-    return log_joint(n=n, hlr=hlr, shear=gamma, target=y)
+    print("True shear:", true_params['gamma'])
 
-  n = 1.
-  hlr = 1.
-  #gamma = tf.zeros(2)#.5 * tf.ones(2)
-  g1 = 0.
-  g2 = 0.
-  print(target_log_prob_fn(n=n, hlr=hlr))#, g1=g1, g2=g2))
+    # Get the joint log prob
+    log_prob = ed.make_log_joint_fn(model)
 
-  n_init = tf.math.exp(tfd.Normal(loc=1., scale=.39).sample() * _log10)
-  hlr_init = tf.math.exp(tfd.Normal(loc=-.68, scale=.3).sample() * _log10)
-  gamma_init = tf.math.exp(tfd.MultivariateNormalDiag(loc=[0., 0.], scale_identity_multiplier=.09).sample() * _log10)
-  target_log_prob = None
-  grads_target_log_prob = None
+    log_prob(n=true_params['n'], 
+            hlr=true_params['hlr'],
+            gamma=true_params['gamma'],
+            e=true_params['e'],
+            obs=ims)
 
-  num_results = int(3e3)
-  num_burnin_steps = int(1e2)
-  adaptive_hmc = tfp.mcmc.SimpleStepSizeAdaptation(
-    tfp.mcmc.HamiltonianMonteCarlo(
+    # For testing just leaving gamma free
+    @tf.function
+    def target_log_prob_fn(gamma, e):
+        return log_prob(n=true_params['n'], 
+                hlr=true_params['hlr'],
+                gamma=gamma,
+                e=e,
+                obs=ims)
+
+    adaptive_hmc = tfp.mcmc.HamiltonianMonteCarlo(
         target_log_prob_fn=target_log_prob_fn,
         num_leapfrog_steps=3,
-        step_size=.01),
-    num_adaptation_steps=int(num_burnin_steps * 0.8))
+        step_size=.0005)
 
-  # Run the chain (with burn-in).
-  #@tf.function
-  def run_chain():
-    # Run the chain (with burn-in).
-    samples, is_accepted = tfp.mcmc.sample_chain(
-        num_results=num_results,
-        num_burnin_steps=num_burnin_steps,
-        #current_state=[n_init, hlr_init, gamma_init],
-        current_state=[n, hlr],
-        #current_state=[n, hlr, g1, g2],
-        kernel=adaptive_hmc,
-        trace_fn=lambda _, pkr: pkr.inner_results.is_accepted)
+    samples, trace = tfp.mcmc.sample_chain(
+        num_results=5000,
+        num_burnin_steps=1,
+        current_state=[true_params['gamma']*0., # Init with just zero ellipticity
+                    true_params['e']*0.],
+        kernel=adaptive_hmc)
 
-    sample_mean = tf.reduce_mean(samples)
-    sample_stddev = tf.math.reduce_std(samples)
-    is_accepted = tf.reduce_mean(tf.cast(is_accepted, dtype=tf.float32))
-    return samples # sample_mean, sample_stddev, is_accepted
-  
-  #samples_n, samples_hlr, samples_g1, samples_g2 = run_chain()
-  samples_n, samples_hlr = run_chain()
-  print("n", tf.reduce_mean(samples_n).numpy(),  "+/-", tf.math.reduce_std(samples_n).numpy())
-  print("hlr", tf.reduce_mean(samples_hlr).numpy(),  "+/-", tf.math.reduce_std(samples_hlr).numpy())
-  #print("g1", tf.reduce_mean(samples_g1).numpy())
-  #print("g2", tf.reduce_mean(samples_g2).numpy())
+    # Draw images using a sample from the chain
+    with ed.condition(n=true_params['n'],
+                    hlr=true_params['hlr'],
+                    gamma=samples[0][0],
+                    e=samples[1][0],
+                    ):
+        rec0 = model()
 
-  # print("Let's run for {} burn-in and {} chain steps".format(num_burnin_steps, num_results))
-  # sample_mean, sample_stddev, is_accepted = run_chain()
 
-  # print(samples.shape)
-  # print('mean:{:.4f}  stddev:{:.4f}  acceptance:{:.4f}'.format(
-  #   sample_mean.numpy(), sample_stddev.numpy(), is_accepted.numpy()))
+    with ed.condition(n=true_params['n'],
+                    hlr=true_params['hlr'],
+                    gamma=samples[0][-1],
+                    e=samples[1][-1],):
+        rec1 = model()
+
+    im_rec0 = rec0.numpy().reshape(4,4,64,64).transpose([0,2,1,3]).reshape([4*64,4*64])
+    im_rec1 = rec1.numpy().reshape(4,4,64,64).transpose([0,2,1,3]).reshape([4*64,4*64])
+
+    plt.figure(figsize=[15,5])
+    plt.subplot(131)
+    plt.imshow(res, cmap='gray_r')
+    plt.title('data')
+    plt.subplot(132)
+    plt.imshow(im_rec0, cmap='gray_r')
+    plt.title('first sample from chain')
+    plt.subplot(133)
+    plt.imshow(im_rec1, cmap='gray_r')
+    plt.title('last sample from chain')
+
+    print("Last value shear:", samples[0][-1].numpy(), true_params['gamma'].numpy())
+
+    plt.figure()
+    plt.plot(samples[0][:])
+    plt.axhline(true_params['gamma'][0].numpy(), color='C0', label='g1')
+    plt.axhline(true_params['gamma'][1].numpy(), color='C1', label='g2')
+    plt.legend()
+
+    plt.figure()
+    for i in range(16):
+        plt.plot(samples[1][:,i,0])
+
+    plt.figure()
+    for i in range(16):
+        plt.plot(samples[1][:,i,1])
+
+    plt.show()
 
 if __name__ == "__main__":
-  app.run(main)
+    app.run(main)
