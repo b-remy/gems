@@ -67,17 +67,9 @@ def model(batch_size, stamp_size):
 
   # Flux
   F = 16.693710205567005 * tf.ones(batch_size)
-  # print(n)
+
   # Generate light profile
   profile = lp.sersic(n, half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
-
-  # print(n.numpy())
-  # print(lp.calculate_b(n).numpy())
-
-  # # INVESTIGATE NANS !!!!!!!
-  # for i in range(batch_size):
-  #   if tf.reduce_any(tf.math.is_nan(profile[i,...])):
-  #     print(i, n[i].numpy(), lp.calculate_b(n[i]).numpy())
 
   # Shear the image
   tfg1 = gamma[:, 0]
@@ -101,12 +93,6 @@ def main(_):
 
   sims = model(batch_size, stamp_size)
 
-  # sims_reshaped = np.zeros((N*stamp_size, N*stamp_size))
-
-  # for i in range(N):
-  #   for j in range(N):
-  #     sims_reshaped[i*stamp_size:(i+1)*stamp_size, j*stamp_size:(j+1)*stamp_size] = sims[i+N*j, ...]
-  
   sims_reshaped = sims.numpy().reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
 
   if FLAGS.save:

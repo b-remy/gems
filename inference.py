@@ -105,11 +105,10 @@ def main(_):
             e=true_params['e'],
             obs=ims)
 
-    # For testing just leaving gamma free
-    @tf.function
-    def target_log_prob_fn(gamma, e):
-        return log_prob(n=true_params['n'], 
-                hlr=true_params['hlr'],
+    # Let gamma, e, n and hlr free
+    def target_log_prob_fn(n, hlr, gamma, e,):
+        return log_prob(n=n, 
+                hlr=hlr,
                 gamma=gamma,
                 e=e,
                 obs=ims)
@@ -118,27 +117,33 @@ def main(_):
         target_log_prob_fn=target_log_prob_fn,
         num_leapfrog_steps=3,
         step_size=.0005)
-
-    samples, trace = tfp.mcmc.sample_chain(
-        num_results=5000,
-        num_burnin_steps=1,
-        current_state=[true_params['gamma']*0., # Init with just zero ellipticity
-                    true_params['e']*0.],
-        kernel=adaptive_hmc)
+    
+    @tf.function
+    def sample():
+      samples, trace = tfp.mcmc.sample_chain(
+          num_results=50000,
+          num_burnin_steps=1,
+          current_state=[true_params['n']*0.+1.,     # Init with 1.
+                      true_params['hlr']*0.+1.,      # Inint with 1.
+                      true_params['gamma']*0., # Init with just zero ellipticity
+                      true_params['e']*0.],
+          kernel=adaptive_hmc)
+      return samples
+    samples = sample()
 
     # Draw images using a sample from the chain
-    with ed.condition(n=true_params['n'],
-                    hlr=true_params['hlr'],
-                    gamma=samples[0][0],
-                    e=samples[1][0],
+    with ed.condition(n=samples[0][0],
+                    hlr=samples[1][0],
+                    gamma=samples[2][0],
+                    e=samples[3][0],
                     ):
         rec0 = model()
 
 
-    with ed.condition(n=true_params['n'],
-                    hlr=true_params['hlr'],
-                    gamma=samples[0][-1],
-                    e=samples[1][-1],):
+    with ed.condition(n=samples[0][-1],
+                    hlr=samples[1][-1],
+                    gamma=samples[2][-1],
+                    e=samples[3][-1],):
         rec1 = model()
 
     im_rec0 = rec0.numpy().reshape(4,4,64,64).transpose([0,2,1,3]).reshape([4*64,4*64])
@@ -154,22 +159,23 @@ def main(_):
     plt.subplot(133)
     plt.imshow(im_rec1, cmap='gray_r')
     plt.title('last sample from chain')
+    print("Diff 1st versus last sample", np.linalg.norm(im_rec0 - im_rec1))
 
-    print("Last value shear:", samples[0][-1].numpy(), true_params['gamma'].numpy())
+    print("Last value shear:", samples[2][-1].numpy(), true_params['gamma'].numpy())
 
     plt.figure()
-    plt.plot(samples[0][:])
+    plt.plot(samples[2][:])
     plt.axhline(true_params['gamma'][0].numpy(), color='C0', label='g1')
     plt.axhline(true_params['gamma'][1].numpy(), color='C1', label='g2')
     plt.legend()
 
     plt.figure()
     for i in range(16):
-        plt.plot(samples[1][:,i,0])
+        plt.plot(samples[3][:,i,0])
 
     plt.figure()
     for i in range(16):
-        plt.plot(samples[1][:,i,1])
+        plt.plot(samples[3][:,i,1])
 
     plt.show()
 
