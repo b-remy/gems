@@ -195,6 +195,7 @@ def make_struct(res, obs, shear_type):
 
     return data
 
+cat = galsim.COSMOSCatalog()
 
 def make_data(rng, noise, shear):
     """
@@ -222,12 +223,13 @@ def make_data(rng, noise, shear):
     gal_hlr = 0.5
     dy, dx = rng.uniform(low=-scale/2, high=scale/2, size=2)
 
-    psf = galsim.Moffat(
-        beta=2.5, fwhm=psf_fwhm,
-    ).shear(
-        g1=0.02,
-        g2=-0.01,
-    )
+    # psf = galsim.Moffat(
+    #     beta=2.5, fwhm=psf_fwhm,
+    # ).shear(
+    #     g1=0.02,
+    #     g2=-0.01,
+    # )
+    psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
 
     obj0 = galsim.Exponential(
         half_light_radius=gal_hlr,
