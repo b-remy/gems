@@ -58,11 +58,12 @@ import numpy as np
 import ngmix
 import galsim
 
+import utils
+
+_scale = 0.03 # COSMOS pixel size in arcsec
 
 def main():
     args = get_args()
-
-    shear_true = [0.01, 0.00]
     rng = np.random.RandomState(args.seed)
 
     # We will measure moments with a fixed gaussian weight function
@@ -90,9 +91,11 @@ def main():
 
     dlist = []
 
-    for i in progress(args.ntrial, miniters=10):
+    data, shear_true, sigma_n = utils.load_sims('./data/sims_toymodel1_2.fits')
 
-        obs = make_data(rng=rng, noise=args.noise, shear=shear_true)
+    #for i in progress(np.min(args.ntrial, data.shape[0]), miniters=10):
+    for i in progress(data.shape[0], miniters=10):
+        obs = make_data(data, i, sigma_n)
 
         resdict, obsdict = boot.go(obs)
 
@@ -124,6 +127,8 @@ def main():
 
     print('S/N: %g' % s2n)
     print('R11: %g' % R11)
+    print('shear', shear)
+    print('shear true', shear_true)
     print('m: %g +/- %g (99.7%% conf)' % (m, merr*3))
     print('c: %g +/- %g (99.7%% conf)' % (shear[1], shear_err[1]*3))
 
@@ -197,7 +202,8 @@ def make_struct(res, obs, shear_type):
 
 cat = galsim.COSMOSCatalog()
 
-def make_data(rng, noise, shear):
+#def make_data(stamp, rng, noise, shear):
+def make_data(data, i, sigma_n):
     """
     simulate an exponential object with moffat psf
 
@@ -214,23 +220,13 @@ def make_data(rng, noise, shear):
     -------
     ngmix.Observation
     """
+    scale = _scale
 
-    psf_noise = 1.0e-6
+    # gal_hlr = 0.5
+    # dy, dx = rng.uniform(low=-scale/2, high=scale/2, size=2)
 
-    scale = 0.263
-
-    psf_fwhm = 0.9
-    gal_hlr = 0.5
-    dy, dx = rng.uniform(low=-scale/2, high=scale/2, size=2)
-
-    # psf = galsim.Moffat(
-    #     beta=2.5, fwhm=psf_fwhm,
-    # ).shear(
-    #     g1=0.02,
-    #     g2=-0.01,
-    # )
     psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
-
+    """
     obj0 = galsim.Exponential(
         half_light_radius=gal_hlr,
     ).shear(
@@ -243,35 +239,26 @@ def make_data(rng, noise, shear):
 
     obj = galsim.Convolve(psf, obj0)
 
-    psf_im = psf.drawImage(scale=scale).array
     im = obj.drawImage(scale=scale).array
 
-    psf_im += rng.normal(scale=psf_noise, size=psf_im.shape)
     im += rng.normal(scale=noise, size=im.shape)
+    """
+    # im
+    # import here PSM simulations
+    im = data[i,...]
 
-    cen = (np.array(im.shape)-1.0)/2.0
-    psf_cen = (np.array(psf_im.shape)-1.0)/2.0
-
-    jacobian = ngmix.DiagonalJacobian(
-        row=cen[0] + dy/scale, col=cen[1] + dx/scale, scale=scale,
-    )
-    psf_jacobian = ngmix.DiagonalJacobian(
-        row=psf_cen[0], col=psf_cen[1], scale=scale,
-    )
-
+    noise = sigma_n
     wt = im*0 + 1.0/noise**2
-    psf_wt = psf_im*0 + 1.0/psf_noise**2
+
+    psf_im = psf.drawImage(scale=scale).array
 
     psf_obs = ngmix.Observation(
         psf_im,
-        weight=psf_wt,
-        jacobian=psf_jacobian,
     )
 
     obs = ngmix.Observation(
         im,
-        weight=wt,
-        jacobian=jacobian,
+        weight=wt,        
         psf=psf_obs,
     )
 
