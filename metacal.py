@@ -91,9 +91,8 @@ def main():
 
     dlist = []
 
-    data, shear_true, sigma_n = utils.load_sims('./data/sims_toymodel1_2.fits')
+    data, shear_true, sigma_n = utils.load_sims(args.filename)
 
-    #for i in progress(np.min(args.ntrial, data.shape[0]), miniters=10):
     for i in progress(data.shape[0], miniters=10):
         obs = make_data(data, i, sigma_n)
 
@@ -222,29 +221,9 @@ def make_data(data, i, sigma_n):
     """
     scale = _scale
 
-    # gal_hlr = 0.5
-    # dy, dx = rng.uniform(low=-scale/2, high=scale/2, size=2)
-
     psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
-    """
-    obj0 = galsim.Exponential(
-        half_light_radius=gal_hlr,
-    ).shear(
-        g1=shear[0],
-        g2=shear[1],
-    ).shift(
-        dx=dx,
-        dy=dy,
-    )
-
-    obj = galsim.Convolve(psf, obj0)
-
-    im = obj.drawImage(scale=scale).array
-
-    im += rng.normal(scale=noise, size=im.shape)
-    """
-    # im
-    # import here PSM simulations
+    
+    # import here simulations
     im = data[i,...]
 
     noise = sigma_n
@@ -297,6 +276,8 @@ def get_args():
                         help='noise for images')
     parser.add_argument('--psf', default='gauss',
                         help='psf for reconvolution')
+    parser.add_argument('--filename', default='./data/sims_toymodel1_0.fits',
+                        help='path and name of data to process')
     return parser.parse_args()
 
 
