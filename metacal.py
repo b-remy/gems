@@ -124,6 +124,9 @@ def main():
 
     s2n = data['s2n'][w].mean()
 
+    print('sigma_n: %g' % sigma_n)
+    print('Metacalibration')
+    print('----------------------')
     print('S/N: %g' % s2n)
     print('R11: %g' % R11)
     print('shear', shear)
