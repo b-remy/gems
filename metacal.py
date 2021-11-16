@@ -233,15 +233,28 @@ def make_data(data, i, sigma_n):
     wt = im*0 + 1.0/noise**2
 
     psf_im = psf.drawImage(scale=scale).array
+    
+    cen = (np.array(im.shape)-1.0)/2.0
+    psf_cen = (np.array(psf_im.shape)-1.0)/2.0
+
+    jacobian = ngmix.DiagonalJacobian(
+        row=cen[0] + 0., col=cen[1] + 0., scale=_scale,
+    )
+    psf_jacobian = ngmix.DiagonalJacobian(
+        row=psf_cen[0], col=psf_cen[1], scale=_scale,
+    )
 
     psf_obs = ngmix.Observation(
         psf_im,
+        # weight=psf_wt,
+        jacobian=psf_jacobian,
     )
 
     obs = ngmix.Observation(
         im,
         weight=wt,        
         psf=psf_obs,
+        jacobian=jacobian,
     )
 
     return obs
