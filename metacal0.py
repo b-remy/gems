@@ -54,6 +54,11 @@ recovered shear is unbiased.  The printout should look something like this
     m: 4.60743e-06 +/- 0.000419315 (99.7% conf)
     c: -8.87648e-07 +/- 4.01498e-06 (99.7% conf)
 """
+
+"""
+Metacal for toymodel 0
+"""
+
 import numpy as np
 import ngmix
 import galsim

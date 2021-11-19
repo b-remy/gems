@@ -54,21 +54,42 @@ recovered shear is unbiased.  The printout should look something like this
     m: 4.60743e-06 +/- 0.000419315 (99.7% conf)
     c: -8.87648e-07 +/- 4.01498e-06 (99.7% conf)
 """
-
-"""
-Metacal for toymodel 1
-"""
-
 import numpy as np
 import ngmix
 import galsim
+import tensorflow as tf
+import galflow
 
-import utils
+_stamp_size = 44
+_pi = np.pi
+_scale = 0.263
 
-_scale = 0.03 # COSMOS pixel size in arcsec
+psf_fwhm = 0.9
+psf = galsim.Moffat(
+        beta=2.5, fwhm=psf_fwhm,
+    ).shear(
+        g1=0.02,
+        g2=-0.01,
+    )
+
+dx, dy = 0., 0.
+
+interp_factor=2
+padding_factor=2
+Nk = _stamp_size*interp_factor*padding_factor
+from galsim.bounds import _BoundsI
+bounds = _BoundsI(0, Nk//2, -Nk//2, Nk//2-1)
+
+imkpsf = psf.drawKImage(bounds=bounds,
+                        scale=2.*_pi/(_stamp_size*padding_factor*_scale),
+                        recenter=False)
+kpsf = tf.cast(np.fft.fftshift(imkpsf.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
+
 
 def main():
     args = get_args()
+
+    shear_true = [0.01, 0.00]
     rng = np.random.RandomState(args.seed)
 
     # We will measure moments with a fixed gaussian weight function
@@ -96,10 +117,9 @@ def main():
 
     dlist = []
 
-    data, shear_true, sigma_n = utils.load_sims(args.filename)
+    for i in progress(args.ntrial, miniters=10):
 
-    for i in progress(data.shape[0], miniters=10):
-        obs = make_data(data, i, sigma_n)
+        obs = make_data(rng=rng, noise=args.noise, shear=shear_true)
 
         resdict, obsdict = boot.go(obs)
 
@@ -129,13 +149,8 @@ def main():
 
     s2n = data['s2n'][w].mean()
 
-    print('sigma_n: %g' % sigma_n)
-    print('Metacalibration')
-    print('----------------------')
     print('S/N: %g' % s2n)
     print('R11: %g' % R11)
-    print('shear', shear)
-    print('shear true', shear_true)
     print('m: %g +/- %g (99.7%% conf)' % (m, merr*3))
     print('c: %g +/- %g (99.7%% conf)' % (shear[1], shear_err[1]*3))
 
@@ -207,10 +222,8 @@ def make_struct(res, obs, shear_type):
 
     return data
 
-cat = galsim.COSMOSCatalog()
 
-#def make_data(stamp, rng, noise, shear):
-def make_data(data, i, sigma_n):
+def make_data(rng, noise, shear):
     """
     simulate an exponential object with moffat psf
 
@@ -227,39 +240,83 @@ def make_data(data, i, sigma_n):
     -------
     ngmix.Observation
     """
-    scale = _scale
 
-    psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
+    args = get_args()
+
+    psf_noise = 1.0e-6
+
+    scale = 0.263
+
+    psf_fwhm = 0.9
+    gal_hlr = 0.5
+    dy, dx = 0.,0. # rng.uniform(low=-scale/2, high=scale/2, size=2)
+
+    psf = galsim.Moffat(
+        beta=2.5, fwhm=psf_fwhm,
+    ).shear(
+        g1=0.02,
+        g2=-0.01,
+    )
+
+    obj0 = galsim.Exponential(
+        half_light_radius=gal_hlr,
+    ).shear(
+        g1=shear[0],
+        g2=shear[1],
+    ).shift(
+        dx=dx,
+        dy=dy,
+    )
     
-    # import here simulations
-    im = data[i,...]
+    """
+    Perform the image and PSF convolution with
+        1. GalFlow
+        0. galsim
+    """
+    if args.galflowconv==1:    
+        im = obj0.drawImage(nx=44, ny=44, scale=scale).array
+        
+        im = np.expand_dims(im, axis=0)
+        im = np.expand_dims(im, axis=-1)
+        im = tf.convert_to_tensor(im, dtype=tf.float32)
+        
+        im = galflow.convolve(im, kpsf,
+                        zero_padding_factor=padding_factor,
+                        interp_factor=interp_factor)[0,...,0]
 
-    noise = sigma_n
-    wt = im*0 + 1.0/noise**2
+    else:
+        obj = galsim.Convolve(psf, obj0)
+        im = obj.drawImage(scale=scale).array
 
     psf_im = psf.drawImage(scale=scale).array
-    
+
+    psf_im += rng.normal(scale=psf_noise, size=psf_im.shape)
+    im += rng.normal(scale=noise, size=im.shape)
+
     cen = (np.array(im.shape)-1.0)/2.0
     psf_cen = (np.array(psf_im.shape)-1.0)/2.0
 
     jacobian = ngmix.DiagonalJacobian(
-        row=cen[0] + 0., col=cen[1] + 0., scale=_scale,
+        row=cen[0] + dy/scale, col=cen[1] + dx/scale, scale=scale,
     )
     psf_jacobian = ngmix.DiagonalJacobian(
-        row=psf_cen[0], col=psf_cen[1], scale=_scale,
+        row=psf_cen[0], col=psf_cen[1], scale=scale,
     )
+
+    wt = im*0 + 1.0/noise**2
+    psf_wt = psf_im*0 + 1.0/psf_noise**2
 
     psf_obs = ngmix.Observation(
         psf_im,
-        # weight=psf_wt,
+        weight=psf_wt,
         jacobian=psf_jacobian,
     )
 
     obs = ngmix.Observation(
         im,
-        weight=wt,        
-        psf=psf_obs,
+        weight=wt,
         jacobian=jacobian,
+        psf=psf_obs,
     )
 
     return obs
@@ -297,8 +354,8 @@ def get_args():
                         help='noise for images')
     parser.add_argument('--psf', default='gauss',
                         help='psf for reconvolution')
-    parser.add_argument('--filename', default='./data/sims_toymodel1_0.fits',
-                        help='path and name of data to process')
+    parser.add_argument('--galflowconv', type=int, default=1,
+                        help='psf for reconvolution')
     return parser.parse_args()
 
 

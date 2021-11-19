@@ -95,8 +95,6 @@ def model(batch_size, stamp_size, shear):
   tfg1 = gamma[:, 0]
   tfg2 = gamma[:, 1]
   ims = galflow.shear(ims, tfg1, tfg2)
-
-  profile = ims[...,0]
   
   # Convolve the image with the PSF
   profile = galflow.convolve(ims, kpsf,
@@ -105,7 +103,6 @@ def model(batch_size, stamp_size, shear):
 
   # Add noise
   image = profile + noise
-
   return image
 
 def main(_):
