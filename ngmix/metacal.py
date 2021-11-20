@@ -60,7 +60,7 @@ import galsim
 import tensorflow as tf
 import galflow
 
-_stamp_size = 44
+_stamp_size = 45
 _pi = np.pi
 _scale = 0.263
 
@@ -72,10 +72,12 @@ psf = galsim.Moffat(
         g2=-0.01,
     )
 
+psf = galsim.Convolve(psf, galsim.Pixel(_scale))
+
 dx, dy = 0., 0.
 
-interp_factor=2
-padding_factor=2
+interp_factor=1
+padding_factor=1
 Nk = _stamp_size*interp_factor*padding_factor
 from galsim.bounds import _BoundsI
 bounds = _BoundsI(0, Nk//2, -Nk//2, Nk//2-1)
@@ -84,6 +86,7 @@ imkpsf = psf.drawKImage(bounds=bounds,
                         scale=2.*_pi/(_stamp_size*padding_factor*_scale),
                         recenter=False)
 kpsf = tf.cast(np.fft.fftshift(imkpsf.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
+
 
 
 def main():
@@ -258,6 +261,8 @@ def make_data(rng, noise, shear):
         g2=-0.01,
     )
 
+    psf = galsim.Convolve(psf, galsim.Pixel(_scale))
+
     obj0 = galsim.Exponential(
         half_light_radius=gal_hlr,
     ).shear(
@@ -273,22 +278,19 @@ def make_data(rng, noise, shear):
         1. GalFlow
         0. galsim
     """
-    if args.galflowconv==1:    
-        im = obj0.drawImage(nx=44, ny=44, scale=scale).array
-        
-        im = np.expand_dims(im, axis=0)
-        im = np.expand_dims(im, axis=-1)
-        im = tf.convert_to_tensor(im, dtype=tf.float32)
-        
-        im = galflow.convolve(im, kpsf,
-                        zero_padding_factor=padding_factor,
-                        interp_factor=interp_factor)[0,...,0]
-
+    if args.galflowconv==1:
+        imk = obj0.drawKImage(bounds=bounds,
+                        scale=2.*_pi/(_stamp_size*padding_factor*_scale),
+                        recenter=False)
+        imk = tf.cast(np.fft.fftshift(imk.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
+        imk = imk * kpsf
+        im = np.fft.fftshift(tf.signal.irfft2d(imk, [_stamp_size*padding_factor, _stamp_size*padding_factor]))
+        im = tf.image.resize_with_crop_or_pad(im[...,tf.newaxis], _stamp_size, _stamp_size)[0,...,0]
     else:
         obj = galsim.Convolve(psf, obj0)
-        im = obj.drawImage(scale=scale).array
+        im = obj.drawImage(nx=_stamp_size, ny=_stamp_size, scale=scale, method='no_pixel').array
 
-    psf_im = psf.drawImage(scale=scale).array
+    psf_im = psf.drawImage(nx=_stamp_size, ny=_stamp_size, scale=scale, method='no_pixel').array
 
     psf_im += rng.normal(scale=psf_noise, size=psf_im.shape)
     im += rng.normal(scale=noise, size=im.shape)
