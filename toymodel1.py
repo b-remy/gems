@@ -28,19 +28,19 @@ _pi = np.pi
 
 FLAGS = flags.FLAGS
 
-stamp_size = 64
+_stamp_size = 65
 # PSF model from galsim COSMOS catalog
 cat = galsim.COSMOSCatalog()
 psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
 
-interp_factor=2
-padding_factor=2
-Nk = stamp_size*interp_factor*padding_factor
+interp_factor=1
+padding_factor=1
+Nk = _stamp_size*interp_factor*padding_factor
 from galsim.bounds import _BoundsI
 bounds = _BoundsI(0, Nk//2, -Nk//2, Nk//2-1)
 
 imkpsf = psf.drawKImage(bounds=bounds,
-                        scale=2.*_pi/(stamp_size*padding_factor*_scale),
+                        scale=2.*_pi/(_stamp_size*padding_factor*_scale),
                         recenter=False)
 kpsf = tf.cast(np.fft.fftshift(imkpsf.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
 
@@ -98,11 +98,11 @@ def model(batch_size, stamp_size, shear):
   return image
 
 def main(_):
-  stamp_size = 64
+  stamp_size = _stamp_size
   N = FLAGS.N
   batch_size = N*N
   sigma_n = FLAGS.sigma_n
-  true_shear = [0.05, 0.0]
+  true_shear = [0.01, 0.0]
 
   sims = model(batch_size, stamp_size, true_shear)
   print(sims.shape)
