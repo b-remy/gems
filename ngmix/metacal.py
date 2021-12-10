@@ -59,8 +59,9 @@ import ngmix
 import galsim
 import tensorflow as tf
 import galflow
+import matplotlib.pyplot as plt
 
-_stamp_size = 45
+_stamp_size = 44
 _pi = np.pi
 _scale = 0.263
 
@@ -76,18 +77,7 @@ psf = galsim.Convolve(psf, galsim.Pixel(_scale))
 
 dx, dy = 0., 0.
 
-interp_factor=1
-padding_factor=1
-Nk = _stamp_size*interp_factor*padding_factor
-from galsim.bounds import _BoundsI
-bounds = _BoundsI(0, Nk//2, -Nk//2, Nk//2-1)
-
-imkpsf = psf.drawKImage(bounds=bounds,
-                        scale=2.*_pi/(_stamp_size*padding_factor*_scale),
-                        recenter=False)
-kpsf = tf.cast(np.fft.fftshift(imkpsf.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
-
-
+im_psf = psf.drawImage(nx=_stamp_size, ny=_stamp_size, scale=_scale, use_true_center=False, method='no_pixel')
 
 def main():
     args = get_args()
@@ -250,20 +240,10 @@ def make_data(rng, noise, shear):
 
     scale = 0.263
 
-    psf_fwhm = 0.9
     gal_hlr = 0.5
     dy, dx = 0.,0. # rng.uniform(low=-scale/2, high=scale/2, size=2)
 
-    psf = galsim.Moffat(
-        beta=2.5, fwhm=psf_fwhm,
-    ).shear(
-        g1=0.02,
-        g2=-0.01,
-    )
-
-    psf = galsim.Convolve(psf, galsim.Pixel(_scale))
-
-    obj0 = galsim.Exponential(
+    obj0 = galsim.Gaussian(
         half_light_radius=gal_hlr,
     ).shear(
         g1=shear[0],
@@ -279,16 +259,29 @@ def make_data(rng, noise, shear):
         0. galsim
     """
     if args.galflowconv==1:
-        imk = obj0.drawKImage(bounds=bounds,
-                        scale=2.*_pi/(_stamp_size*padding_factor*_scale),
-                        recenter=False)
-        imk = tf.cast(np.fft.fftshift(imk.array.reshape(1, Nk, Nk//2+1), axes=1), tf.complex64)
-        imk = imk * kpsf
-        im = np.fft.fftshift(tf.signal.irfft2d(imk, [_stamp_size*padding_factor, _stamp_size*padding_factor]))
-        im = tf.image.resize_with_crop_or_pad(im[...,tf.newaxis], _stamp_size, _stamp_size)[0,...,0]
+        im_gal = obj0.drawImage(nx=_stamp_size, ny=_stamp_size, scale=_scale, method='no_pixel')
+
+        # Forward FFT
+        im_gal_k = tf.signal.fft2d(im_gal.array)
+        im_psf_k = tf.signal.fft2d(im_psf.array)
+
+        # Fourier-based convolution
+        im_conv_k = im_gal_k * (im_psf_k)
+
+        # Inverse FFT
+        # im = tf.signal.fftshift(tf.math.real(tf.signal.irfft2d(im_conv_k)))
+        im = tf.signal.fftshift(tf.math.real(tf.signal.ifft2d(im_conv_k)))
     else:
         obj = galsim.Convolve(psf, obj0)
         im = obj.drawImage(nx=_stamp_size, ny=_stamp_size, scale=scale, method='no_pixel').array
+
+    # # Check convolution works well on one example
+    # obj = galsim.Convolve(psf, obj0)
+    # im2 = obj.drawImage(nx=_stamp_size, ny=_stamp_size, scale=scale, method='no_pixel').array
+    # plt.figure()
+    # plt.imshow(im-im2)
+    # plt.colorbar()
+    # plt.show()
 
     psf_im = psf.drawImage(nx=_stamp_size, ny=_stamp_size, scale=scale, method='no_pixel').array
 
