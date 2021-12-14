@@ -82,7 +82,12 @@ im_psf = psf.drawImage(nx=_stamp_size, ny=_stamp_size, scale=_scale, use_true_ce
 def main():
     args = get_args()
 
+    print(args.lp, 'light profiles')
+
     shear_true = [0.01, 0.00]
+    print('expected shear:', shear_true)
+    print()
+    
     rng = np.random.RandomState(args.seed)
 
     # We will measure moments with a fixed gaussian weight function
@@ -218,7 +223,7 @@ def make_struct(res, obs, shear_type):
 
 def make_data(rng, noise, shear):
     """
-    simulate an exponential object with moffat psf
+    simulate an exponential or Gaussian object with moffat psf
 
     Parameters
     ----------
@@ -243,16 +248,31 @@ def make_data(rng, noise, shear):
     gal_hlr = 0.5
     dy, dx = 0.,0. # rng.uniform(low=-scale/2, high=scale/2, size=2)
 
-    obj0 = galsim.Gaussian(
-        half_light_radius=gal_hlr,
-    ).shear(
-        g1=shear[0],
-        g2=shear[1],
-    ).shift(
-        dx=dx,
-        dy=dy,
-    )
+    if args.lp=='gaussian':
+        obj0 = galsim.Gaussian(
+            half_light_radius=gal_hlr,
+        ).shear(
+            g1=shear[0],
+            g2=shear[1],
+        ).shift(
+            dx=dx,
+            dy=dy,
+        )
     
+    elif args.lp=='exponential':
+        obj0 = galsim.Exponential(
+            half_light_radius=gal_hlr,
+        ).shear(
+            g1=shear[0],
+            g2=shear[1],
+        ).shift(
+            dx=dx,
+            dy=dy,
+        )
+        
+    else:
+        raise ValueError("Light profile must be either 'exponential' or 'gaussian'.")
+
     """
     Perform the image and PSF convolution with
         1. GalFlow
@@ -350,7 +370,9 @@ def get_args():
     parser.add_argument('--psf', default='gauss',
                         help='psf for reconvolution')
     parser.add_argument('--galflowconv', type=int, default=1,
-                        help='psf for reconvolution')
+                        help='whether we perform convolution using TF or galsim')
+    parser.add_argument('--lp', type=str, default='exponential',
+                        help='specify the light profile, must be either "exponential" or "gaussian"')
     return parser.parse_args()
 
 
