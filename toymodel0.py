@@ -88,8 +88,8 @@ def model(batch_size, stamp_size, shear):
   F = tf.ones(batch_size)
 
   # Generate light profile
-  profile = lp.exponential(half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
-  # profile = lp.gaussian(half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
+  # profile = lp.exponential(half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
+  profile = lp.gaussian(half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
   ims = tf.cast(tf.reshape(profile, (batch_size,stamp_size,stamp_size,1)), tf.float32)
 
   # constant shear
@@ -99,33 +99,6 @@ def model(batch_size, stamp_size, shear):
   tfg1 = gamma[:, 0]
   tfg2 = gamma[:, 1]
   ims = galflow.shear(ims, tfg1, tfg2)
-  
-  # Convolve the image with the PSF
-  # profile = galflow.convolve(ims, kpsf,
-  #                     zero_padding_factor=padding_factor,
-  #                     interp_factor=interp_factor)[...,0]
-  # imk = tf.signal.rfft2d(ims[...])
-  # # Performing k space convolution
-  # imconv = galflow.kconvolve(imk, kpsf,
-  #                 zero_padding_factor=1,
-  #                 interp_factor=interp_factor)
-
-  # profile = tf.image.resize_with_crop_or_pad(imconv, _stamp_size, _stamp_size)[...,0]
-  
-  # imk = tf.signal.rfft2d(ims[...,0])
-
-  # print(imk.shape)
-  # print()
-  # print()
-  # print()
-  # # imk = tf.cast(tf.signal.fftshift(tf.reshape(imk, (batch_size, Nk, Nk//2+1)), axes=1), tf.complex64)
-  # imk = tf.cast(tf.reshape(imk, (batch_size, Nk, Nk//2+1)), tf.complex64)
-
-  # imk = imk * kpsf
-  # # im = tf.signal.fftshift(tf.signal.irfft2d(imk, [_stamp_size*padding_factor, _stamp_size*padding_factor]))
-  # im = tf.signal.irfft2d(imk, [_stamp_size*padding_factor, _stamp_size*padding_factor])
-  
-  # im = tf.image.resize_with_crop_or_pad(im[...,tf.newaxis], _stamp_size, _stamp_size)[...,0]
 
   ims = tf.cast(ims[...,0], tf.complex64)
 
@@ -134,8 +107,7 @@ def model(batch_size, stamp_size, shear):
 
   def convolve_tf(im_gal, im_psf):
     """
-    im_psf = psf.drawImage(nx=_stamp_size, ny=_stamp_size, scale=_scale, use_true_center=False, method='no_pixel')
-    im_gal = obj0.drawImage(nx=_stamp_size, ny=_stamp_size, scale=_scale, method='no_pixel')
+    im_psf and im_gal must have the shape : [batch_size, N, N]
     """
     im_gal_k = tf.signal.fft2d(im_gal)
     im_psf_k = tf.signal.fft2d(im_psf)
