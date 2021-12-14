@@ -4,7 +4,8 @@ Toy model 0
 Matching ngmix.examples.metacal.metacal.py data
 https://github.com/esheldon/ngmix/blob/master/examples/metacal/metacal.py
 
-Exponential light profiles
+# Exponential light profiles
+Gaussian light profiles
   - constant shear
   - constant size
   - no intrinsic e
@@ -45,8 +46,8 @@ FLAGS = flags.FLAGS
 _stamp_size = 44
 
 # PSF model from galsim COSMOS catalog
-cat = galsim.COSMOSCatalog()
-psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
+# cat = galsim.COSMOSCatalog()
+# psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
 
 psf_fwhm = 0.9
 psf = galsim.Moffat(
@@ -56,8 +57,10 @@ psf = galsim.Moffat(
         g2=-0.01,
     )
 
-interp_factor=2
-padding_factor=2
+psf = galsim.Convolve(psf, galsim.Pixel(_scale))
+
+interp_factor=1
+padding_factor=1
 Nk = _stamp_size*interp_factor*padding_factor
 from galsim.bounds import _BoundsI
 bounds = _BoundsI(0, Nk//2, -Nk//2, Nk//2-1)
@@ -86,6 +89,7 @@ def model(batch_size, stamp_size, shear):
 
   # Generate light profile
   profile = lp.exponential(half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
+  # profile = lp.gaussian(half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
   ims = tf.cast(tf.reshape(profile, (batch_size,stamp_size,stamp_size,1)), tf.float32)
 
   # constant shear
@@ -97,9 +101,52 @@ def model(batch_size, stamp_size, shear):
   ims = galflow.shear(ims, tfg1, tfg2)
   
   # Convolve the image with the PSF
-  profile = galflow.convolve(ims, kpsf,
-                      zero_padding_factor=padding_factor,
-                      interp_factor=interp_factor)[...,0]
+  # profile = galflow.convolve(ims, kpsf,
+  #                     zero_padding_factor=padding_factor,
+  #                     interp_factor=interp_factor)[...,0]
+  # imk = tf.signal.rfft2d(ims[...])
+  # # Performing k space convolution
+  # imconv = galflow.kconvolve(imk, kpsf,
+  #                 zero_padding_factor=1,
+  #                 interp_factor=interp_factor)
+
+  # profile = tf.image.resize_with_crop_or_pad(imconv, _stamp_size, _stamp_size)[...,0]
+  
+  # imk = tf.signal.rfft2d(ims[...,0])
+
+  # print(imk.shape)
+  # print()
+  # print()
+  # print()
+  # # imk = tf.cast(tf.signal.fftshift(tf.reshape(imk, (batch_size, Nk, Nk//2+1)), axes=1), tf.complex64)
+  # imk = tf.cast(tf.reshape(imk, (batch_size, Nk, Nk//2+1)), tf.complex64)
+
+  # imk = imk * kpsf
+  # # im = tf.signal.fftshift(tf.signal.irfft2d(imk, [_stamp_size*padding_factor, _stamp_size*padding_factor]))
+  # im = tf.signal.irfft2d(imk, [_stamp_size*padding_factor, _stamp_size*padding_factor])
+  
+  # im = tf.image.resize_with_crop_or_pad(im[...,tf.newaxis], _stamp_size, _stamp_size)[...,0]
+
+  ims = tf.cast(ims[...,0], tf.complex64)
+
+  im_psf = psf.drawImage(nx=_stamp_size, ny=_stamp_size, scale=_scale, use_true_center=False, method='no_pixel').array
+  im_psf = tf.expand_dims(tf.cast(im_psf, tf.complex64), axis=0)
+
+  def convolve_tf(im_gal, im_psf):
+    """
+    im_psf = psf.drawImage(nx=_stamp_size, ny=_stamp_size, scale=_scale, use_true_center=False, method='no_pixel')
+    im_gal = obj0.drawImage(nx=_stamp_size, ny=_stamp_size, scale=_scale, method='no_pixel')
+    """
+    im_gal_k = tf.signal.fft2d(im_gal)
+    im_psf_k = tf.signal.fft2d(im_psf)
+    # Fourier-based convolution
+    im_conv_k = im_gal_k * (im_psf_k)
+
+    # Inverse FFT
+    im = tf.signal.fftshift(tf.math.real(tf.signal.ifft2d(im_conv_k)), axes=(1,2))
+    return im
+
+  profile = convolve_tf(ims, im_psf)
 
   # Add noise
   image = profile + noise

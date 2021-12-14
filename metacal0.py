@@ -213,7 +213,8 @@ cat = galsim.COSMOSCatalog()
 #def make_data(stamp, rng, noise, shear):
 def make_data(data, i, sigma_n):
     """
-    simulate an exponential object with moffat psf
+    # simulate an exponential object with moffat psf
+    simulate an gaussian object with moffat psf
 
     Parameters
     ----------
@@ -239,6 +240,8 @@ def make_data(data, i, sigma_n):
             g2=-0.01,
         )
     
+    psf = galsim.Convolve(psf, galsim.Pixel(_scale))
+
     dx, dy = 0., 0.
 
     # import here simulations
@@ -247,7 +250,12 @@ def make_data(data, i, sigma_n):
     noise = sigma_n
     psf_noise = 1.0e-6
 
-    psf_im = psf.drawImage(scale=scale).array
+    # psf_im = psf.drawImage(scale=scale).array
+    _stamp_size = 44
+
+    psf_im = psf.drawImage(nx=_stamp_size, ny=_stamp_size, scale=scale, method='no_pixel').array
+    psf_im += np.random.normal(scale=psf_noise, size=psf_im.shape)
+
     im += np.random.normal(scale=noise, size=im.shape)
 
     cen = (np.array(im.shape)-1.0)/2.0
