@@ -323,9 +323,5 @@ def get_args():
                         help='specify the light profile, must be either "exponential" or "gaussian"')
     return parser.parse_args()
 
-
-# if __name__ == '__main__':
-#    main()
-
 def test_convolution_odd_gaussians():
     main()
