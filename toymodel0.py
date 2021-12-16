@@ -1,3 +1,18 @@
+"""
+Toy model 0
+
+Matching ngmix.examples.metacal.metacal.py data
+https://github.com/esheldon/ngmix/blob/master/examples/metacal/metacal.py
+
+# Exponential light profiles
+Gaussian light profiles
+  - constant shear
+  - constant size
+  - no intrinsic e
+
+Moffat PSF
+"""
+
 import tensorflow as tf
 import edward2 as ed
 
@@ -18,20 +33,31 @@ lp = galflow.lightprofiles
 flags.DEFINE_integer("N", 5, "Number of stamps on x and y axes")
 flags.DEFINE_boolean("plot", True, "Should we plot the simulations?")
 flags.DEFINE_string("output_dir", "data", "Path to output simulations")
-flags.DEFINE_string("model_name", "toymodel1", "Name of the probabilistic model")
+flags.DEFINE_string("model_name", "toymodel0", "Name of the probabilistic model")
 flags.DEFINE_boolean("save", False, "Should we store the simulations?")
-flags.DEFINE_float("sigma_n", 1e-3, "Level of noise in data")
+flags.DEFINE_float("sigma_n", 1e-6, "Level of noise in data")
 
 _log10 = tf.math.log(10.)
-_scale = 0.03 # COSMOS pixel size in arcsec
+_scale = 0.263
 _pi = np.pi
 
 FLAGS = flags.FLAGS
 
-_stamp_size = 65
+_stamp_size = 44
+
 # PSF model from galsim COSMOS catalog
-cat = galsim.COSMOSCatalog()
-psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
+# cat = galsim.COSMOSCatalog()
+# psf = cat.makeGalaxy(2,  gal_type='real', noise_pad_size=0).original_psf
+
+psf_fwhm = 0.9
+psf = galsim.Moffat(
+        beta=2.5, fwhm=psf_fwhm,
+    ).shear(
+        g1=0.02,
+        g2=-0.01,
+    )
+
+psf = galsim.Convolve(psf, galsim.Pixel(_scale))
 
 interp_factor=1
 padding_factor=1
@@ -55,43 +81,44 @@ def model(batch_size, stamp_size, shear):
   sigma_n = FLAGS.sigma_n
   noise = ed.Normal(loc=tf.zeros((batch_size, nx, ny)), scale=sigma_n)
 
-  # prior on Sersic index n
-  log_l_n = ed.Normal(loc=.1*tf.ones(batch_size), scale=.39)
-  n = tf.math.exp(log_l_n * _log10)
-
-  # prior on Sersic size half light radius
-  log_l_hlr = ed.Normal(loc=-.68*tf.ones(batch_size), scale=.3)
-  hlr = tf.math.exp(log_l_hlr * _log10)
+  # constant hlr
+  hlr = 0.5 * tf.ones(batch_size)
 
   # Flux
-  F = 16.693710205567005 * tf.ones(batch_size)
+  F = tf.ones(batch_size)
 
   # Generate light profile
-  profile = lp.sersic(n, half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
-
-  # prior on intrinsic galaxy ellipticity
-  e = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=.2, name="e")
-  tfe1 = e[:, 0]
-  tfe2 = e[:, 1]
+  # profile = lp.exponential(half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
+  profile = lp.gaussian(half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=_scale)
   ims = tf.cast(tf.reshape(profile, (batch_size,stamp_size,stamp_size,1)), tf.float32)
-  ims = galflow.shear(ims, tfe1, tfe2)
 
-  # prior on shear
-  # gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=.09)
+  # constant shear
   gamma = tf.convert_to_tensor(shear, dtype=tf.float32)
   gamma = tf.repeat(tf.expand_dims(gamma, 0), batch_size, axis=0)
-  # gamma = tf.zeros(2)
-
   # Shear the image
   tfg1 = gamma[:, 0]
   tfg2 = gamma[:, 1]
-  #ims = tf.cast(tf.reshape(profile, (batch_size,stamp_size,stamp_size,1)), tf.float32)
   ims = galflow.shear(ims, tfg1, tfg2)
-  
-  # Convolve the image with the PSF
-  profile = galflow.convolve(ims, kpsf,
-                      zero_padding_factor=padding_factor,
-                      interp_factor=interp_factor)[...,0]
+
+  ims = tf.cast(ims[...,0], tf.complex64)
+
+  im_psf = psf.drawImage(nx=_stamp_size, ny=_stamp_size, scale=_scale, use_true_center=False, method='no_pixel').array
+  im_psf = tf.expand_dims(tf.cast(im_psf, tf.complex64), axis=0)
+
+  def convolve_tf(im_gal, im_psf):
+    """
+    im_psf and im_gal must have the shape : [batch_size, N, N]
+    """
+    im_gal_k = tf.signal.fft2d(im_gal)
+    im_psf_k = tf.signal.fft2d(im_psf)
+    # Fourier-based convolution
+    im_conv_k = im_gal_k * (im_psf_k)
+
+    # Inverse FFT
+    im = tf.signal.fftshift(tf.math.real(tf.signal.ifft2d(im_conv_k)), axes=(1,2))
+    return im
+
+  profile = convolve_tf(ims, im_psf)
 
   # Add noise
   image = profile + noise
