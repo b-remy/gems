@@ -13,6 +13,7 @@ import arviz as az
 import galsim
 import galflow
 lp = galflow.lightprofiles
+import timeit
 
 _log10 = tf.math.log(10.)
 _scale = 0.03 # COSMOS pixel size in arcsec
@@ -133,16 +134,21 @@ def main(_):
         kernel=adaptive_hmc)
     return samples, trace
 
+  print("start sampling...")
+
   samples, trace = get_samples()
+  
   print('accptance ratio:', trace.is_accepted.numpy().sum()/len(trace.is_accepted.numpy()))
 
   np.save("res/samples{}_shear-e{}_shear.npy".format(N*N, num_results), samples[0].numpy())
   np.save("res/samples{}_shear-e{}_e.npy".format(N*N, num_results), samples[1].numpy())
 
+  gamma_est = samples[0][:]/10.
+
   # Display things
 
   plt.figure()
-  plt.plot(samples[0][:]/10.)
+  plt.plot(gamma_est)
   plt.axhline(custom_shear[0], color='C0', label='g1')
   plt.axhline(custom_shear[1], color='C1', label='g2')
   plt.legend()
@@ -150,16 +156,16 @@ def main(_):
 
   plt.figure()
   az.plot_pair(
-    {'gamma1':samples[0].numpy()[:,0], 
-     'gamma2':samples[0].numpy()[:,1]},
+    {'gamma1':gamma_est.numpy()[:,0], 
+     'gamma2':gamma_est.numpy()[:,1]},
     var_names=["gamma1", "gamma2"],
     kind="kde",
     divergences=True,
     textsize=22,
     )
 
-  plt.axvline(true_params['gamma'][0].numpy())
-  plt.axhline(true_params['gamma'][1].numpy())
+  plt.axvline(custom_shear[0])
+  plt.axhline(custom_shear[1])
   plt.savefig('res/shear_countours.png', bbox_inches='tight')
 
   plt.figure()
@@ -176,4 +182,7 @@ def main(_):
   plt.savefig('res/e.png')
 
 if __name__ == "__main__":
+    start = timeit.timeit()
     app.run(main)
+    end = timeit.timeit()
+    print('end of sampling ({} s)'.format(end - start))
