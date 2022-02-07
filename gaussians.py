@@ -18,7 +18,7 @@ import timeit
 _log10 = tf.math.log(10.)
 _scale = 0.03 # COSMOS pixel size in arcsec
 _pi = np.pi
-N = 4 # number of stamp in a row/col
+N = 5 # number of stamp in a row/col
 stamp_size = 64
 
 ## PSF model from galsim COSMOS catalog
@@ -92,6 +92,7 @@ def main(_):
   # Apply a constant shear on the field
   custom_shear = [0.01, 0.]
   with ed.condition(hlr=true_params['hlr'],
+                  # gamma=true_params['gamma'],
                   gamma=custom_shear,
                   e=true_params['e'],
                   ):
@@ -112,6 +113,7 @@ def main(_):
     return log_prob(hlr=true_params['hlr'],
            gamma=gamma/10., # trick to adapt the step size
            e=e,
+          #  e=true_params['e'],
            obs=ims)
 
   ## define the kernel sampler
@@ -120,7 +122,7 @@ def main(_):
       num_leapfrog_steps=3,
       step_size=.0002)
 
-  num_results = 50000
+  num_results = 100
   num_burnin_steps = 1
 
   @tf.function
@@ -134,6 +136,9 @@ def main(_):
         kernel=adaptive_hmc)
     return samples, trace
 
+  print()
+  print(true_params['gamma'])
+  print()
   print("start sampling...")
 
   samples, trace = get_samples()
@@ -143,14 +148,16 @@ def main(_):
   np.save("res/samples{}_shear-e{}_shear.npy".format(N*N, num_results), samples[0].numpy())
   np.save("res/samples{}_shear-e{}_e.npy".format(N*N, num_results), samples[1].numpy())
 
-  gamma_est = samples[0][:]/10.
+  gamma_est = samples[0]/10.
+  gamma_true = custom_shear
+  # gamma_true = true_params['gamma'].numpy()
 
   # Display things
 
   plt.figure()
   plt.plot(gamma_est)
-  plt.axhline(custom_shear[0], color='C0', label='g1')
-  plt.axhline(custom_shear[1], color='C1', label='g2')
+  plt.axhline(gamma_true[0], color='C0', label='g1')
+  plt.axhline(gamma_true[1], color='C1', label='g2')
   plt.legend()
   plt.savefig('res/shear.png')
 
@@ -164,8 +171,8 @@ def main(_):
     textsize=22,
     )
 
-  plt.axvline(custom_shear[0])
-  plt.axhline(custom_shear[1])
+  plt.axvline(gamma_true[0])
+  plt.axhline(gamma_true[1])
   plt.savefig('res/shear_countours.png', bbox_inches='tight')
 
   plt.figure()
@@ -182,7 +189,7 @@ def main(_):
   plt.savefig('res/e.png')
 
 if __name__ == "__main__":
-    start = timeit.timeit()
+    # start = timeit.timeit()
     app.run(main)
-    end = timeit.timeit()
-    print('end of sampling ({} s)'.format(end - start))
+    # end = timeit.timeit()
+    # print('end of sampling ({} s)'.format(end - start))
