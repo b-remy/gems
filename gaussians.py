@@ -90,10 +90,10 @@ def main(_):
     ims = model(N*N, stamp_size)
   
   # Apply a constant shear on the field
-  custom_shear = [0.01, 0.]
+  # custom_shear = [0.015, 0.005]
   with ed.condition(hlr=true_params['hlr'],
-                  # gamma=true_params['gamma'],
-                  gamma=custom_shear,
+                  gamma=true_params['gamma'],
+                  # gamma=custom_shear,
                   e=true_params['e'],
                   ):
     ims = model(N*N, stamp_size)
@@ -122,7 +122,7 @@ def main(_):
       num_leapfrog_steps=3,
       step_size=.0002)
 
-  num_results = 100
+  num_results = 50000
   num_burnin_steps = 1
 
   @tf.function
@@ -136,21 +136,18 @@ def main(_):
         kernel=adaptive_hmc)
     return samples, trace
 
-  print()
-  print(true_params['gamma'])
-  print()
   print("start sampling...")
 
   samples, trace = get_samples()
   
   print('accptance ratio:', trace.is_accepted.numpy().sum()/len(trace.is_accepted.numpy()))
 
-  np.save("res/samples{}_shear-e{}_shear.npy".format(N*N, num_results), samples[0].numpy())
-  np.save("res/samples{}_shear-e{}_e.npy".format(N*N, num_results), samples[1].numpy())
-
   gamma_est = samples[0]/10.
-  gamma_true = custom_shear
-  # gamma_true = true_params['gamma'].numpy()
+  # gamma_true = custom_shear
+  gamma_true = true_params['gamma'].numpy()
+
+  np.save("res/samples{}_shear-e{}_shear_{}_{}.npy".format(N*N, num_results, gamma_true[0], gamma_true[1]), samples[0].numpy())
+  np.save("res/samples{}_shear-e{}_e.npy".format(N*N, num_results), samples[1].numpy())
 
   # Display things
 
@@ -168,7 +165,7 @@ def main(_):
     var_names=["gamma1", "gamma2"],
     kind="kde",
     divergences=True,
-    textsize=22,
+    textsize=18,
     )
 
   plt.axvline(gamma_true[0])
