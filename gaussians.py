@@ -108,11 +108,13 @@ def main(_):
   # Get the joint log prob
   log_prob = ed.make_log_joint_fn(model)
   
+  scale_factor = 1.
   # hlr, gamma and e are free parameters
-  def target_log_prob_fn(gamma, e):
-    return log_prob(hlr=true_params['hlr'],
-           gamma=gamma/10., # trick to adapt the step size
+  def target_log_prob_fn(hlr, gamma, e):
+    return log_prob(hlr=hlr,
+           gamma=gamma/scale_factor, # trick to adapt the step size
            e=e,
+          #  hlr=true_params['hlr'],
           #  e=true_params['e'],
            obs=ims)
 
@@ -120,7 +122,7 @@ def main(_):
   adaptive_hmc = tfp.mcmc.HamiltonianMonteCarlo(
       target_log_prob_fn=target_log_prob_fn,
       num_leapfrog_steps=3,
-      step_size=.0002)
+      step_size=.00005)
 
   num_results = 50000
   num_burnin_steps = 1
@@ -130,7 +132,8 @@ def main(_):
     samples, trace = tfp.mcmc.sample_chain(
         num_results=num_results,
         num_burnin_steps=num_burnin_steps,
-        current_state=[true_params['gamma']*0., # init with zero shear
+        current_state=[true_params['hlr']*0.-.68, # init with prior mean
+                      true_params['gamma']*0., # init with zero shear
                       true_params['e']*0., # init with zero ellipticity
         ],
         kernel=adaptive_hmc)
@@ -139,15 +142,19 @@ def main(_):
   print("start sampling...")
 
   samples, trace = get_samples()
+  print(samples)
   
   print('accptance ratio:', trace.is_accepted.numpy().sum()/len(trace.is_accepted.numpy()))
 
-  gamma_est = samples[0]/10.
+  hlr_est = samples[0].numpy()
+  gamma_est = samples[1].numpy()/scale_factor 
+  e_est = samples[2].numpy()
   # gamma_true = custom_shear
   gamma_true = true_params['gamma'].numpy()
 
-  np.save("res/samples{}_shear-e{}_shear_{}_{}.npy".format(N*N, num_results, gamma_true[0], gamma_true[1]), samples[0].numpy())
-  np.save("res/samples{}_shear-e{}_e.npy".format(N*N, num_results), samples[1].numpy())
+  np.save("res/shear_e_r/samples{}_{}_shear_{}_{}.npy".format(N*N, num_results, gamma_true[0], gamma_true[1]), gamma_est)
+  np.save("res/shear_e_r/samples{}_{}_e.npy".format(N*N, num_results), e_est)
+  np.save("res/shear_e_r/samples{}_{}_r.npy".format(N*N, num_results), hlr_est)
 
   # Display things
 
@@ -156,12 +163,12 @@ def main(_):
   plt.axhline(gamma_true[0], color='C0', label='g1')
   plt.axhline(gamma_true[1], color='C1', label='g2')
   plt.legend()
-  plt.savefig('res/shear.png')
+  plt.savefig('res/shear_e_r/shear.png')
 
   plt.figure()
   az.plot_pair(
-    {'gamma1':gamma_est.numpy()[:,0], 
-     'gamma2':gamma_est.numpy()[:,1]},
+    {'gamma1':gamma_est[:,0], 
+     'gamma2':gamma_est[:,1]},
     var_names=["gamma1", "gamma2"],
     kind="kde",
     divergences=True,
@@ -170,23 +177,30 @@ def main(_):
 
   plt.axvline(gamma_true[0])
   plt.axhline(gamma_true[1])
-  plt.savefig('res/shear_countours.png', bbox_inches='tight')
+  plt.savefig('res/shear_e_r/shear_countours.png', bbox_inches='tight')
 
   plt.figure()
   plt.subplot(121)
   plt.title('e1')
   for i in range(16):
-    plt.plot(samples[1][:,i,0])
+    plt.plot(e_est[:,i,0])
+    plt.axhline(true_params['e'].numpy()[i,0], color='gray')
 
   plt.subplot(122)
   plt.title('e2')
   for i in range(16):
-    plt.plot(samples[1][:,i,1])
+    plt.plot(e_est[:,i,1])
+    plt.axhline(true_params['e'].numpy()[i,1], color='gray')
 
-  plt.savefig('res/e.png')
+  plt.savefig('res/shear_e_r/e.png')
+
+  plt.figure()
+  plt.title('hlr')
+  for i in range(16):
+    plt.plot(hlr_est[:,i])
+    plt.axhline(true_params['hlr'].numpy()[i], color='gray')
+
+  plt.savefig('res/shear_e_r/hlr.png')
 
 if __name__ == "__main__":
-    # start = timeit.timeit()
     app.run(main)
-    # end = timeit.timeit()
-    # print('end of sampling ({} s)'.format(end - start))
