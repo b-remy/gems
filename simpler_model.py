@@ -14,7 +14,7 @@ import arviz as az
 import galsim
 import galflow
 lp = galflow.lightprofiles
-import timeit
+import time
 
 from models import gaussian_model, sersic_model
 
@@ -85,7 +85,6 @@ def main(_):
   print("start sampling...")
 
   samples, trace = get_samples()
-  print(samples)
   
   print('accptance ratio:', trace.is_accepted.numpy().sum()/len(trace.is_accepted.numpy()))
 
@@ -96,7 +95,7 @@ def main(_):
   gamma_true = true_params['gamma'].numpy()
 
   job_name = str(int(time.time()))
-  os.mkdir("res/{}".format(job_name))
+  os.mkdir("res/simpler_model/{}".format(job_name))
   np.save("res/simpler_model/"+job_name+"/samples{}_{}_shear_{}_{}.npy".format(N*N, num_results, gamma_true[0], gamma_true[1]), gamma_est)
   np.save("res/simpler_model/"+job_name+"/samples{}_{}_e.npy".format(N*N, num_results), e_est)
   np.save("res/simpler_model/"+job_name+"/samples{}_{}_r.npy".format(N*N, num_results), hlr_est)
