@@ -1,70 +1,69 @@
 import numpy as np
 import tensorflow as tf
 
+# utils
 
-def radial_profile(data):
-  """
-  Compute the radial profile of 2d image
-  :param data: 2d image
-  :return: radial profile
-  """
-  center = data.shape[0]/2
-  y, x = np.indices((data.shape))
-  r = np.sqrt((x - center)**2 + (y - center)**2)
-  r = r.astype('int32')
+def radial_profile(power_spectrum_2d):
+    """
+    Compute the radial profile of 2d image
+    :param data: 2d image
+    :return: radial profile
+    """
+    center = power_spectrum_2d.shape[0]/2
+    v, u = np.indices((power_spectrum_2d.shape))
+    k = np.sqrt((u - center)**2 + (v - center)**2)
+    k = k.astype('int32')
 
-  tbin = np.bincount(r.ravel(), data.ravel())
-  nr = np.bincount(r.ravel())
-  radialprofile = tbin / nr
-  return radialprofile
+    tbin = np.bincount(k.ravel(), power_spectrum_2d.ravel())
+    nr = np.bincount(k.ravel())
+    radialprofile = tbin / nr
+    return radialprofile
 
 def measure_power_spectrum(map_data, pixel_size):
-  """
-  measures power 2d data
-  :param power: map (nxn)
-  :param pixel_size: pixel_size (rad/pixel)
-  :return: ell
-  :return: power spectrum
-  
-  """
-  data_ft = np.fft.fftshift(np.fft.fft2(map_data)) / map_data.shape[0]
-  nyquist = np.int(map_data.shape[0]/2)
-  power_spectrum_1d =  radial_profile(np.real(data_ft*np.conj(data_ft)))[:nyquist] * (pixel_size)**2
-  k = np.arange(power_spectrum_1d.shape[0])
-  ell = 2. * np.pi * k / pixel_size / 360
-  return ell, power_spectrum_1d
+    """
+    measures power 2d data
+    :param map_data: map (n x n)
+    :param pixel_size: pixel size (rad/pixel)
+    :return: k
+    :return: pk
+    """
+    map_size = map_data.shape[0]
+    data_ft = np.abs(np.fft.fft2(map_data))
+    data_ft_shifted = np.fft.fftshift(data_ft) 
+    power_spectrum_2d = np.abs(data_ft_shifted * np.conjugate(data_ft_shifted)) / map_size**2
+    nyquist = np.int(data_ft_shifted.shape[0] / 2)
+    radialprofile = radial_profile(power_spectrum_2d)
+    power_spectrum_1d = radialprofile[:nyquist]
+
+    k = np.arange(power_spectrum_1d.shape[0])
+    #k = np.fft.fftfreq(power_spectrum_1d.shape[0])
+    return k, power_spectrum_1d
 
 
-def make_power_map(power_spectrum, size, kps=None, zero_freq_val=1.e-7):
-  #Ok we need to make a map of the power spectrum in Fourier space
-  k1 = np.fft.fftfreq(size)
-  k2 = np.fft.fftfreq(size)
+def make_power_map(power_spectrum, size, kps=None): 
+  k1 = np.arange(size)
+  k2 = np.arange(size)
   kcoords = np.meshgrid(k1,k2)
   # Now we can compute the k vector
-  k = np.sqrt(kcoords[0]**2 + kcoords[1]**2)
-  if kps is None:
-    kps = np.linspace(0,0.5,len(power_spectrum))
-  # And we can interpolate the PS at these positions
+  k = np.sqrt((kcoords[0]-size/2)**2 + (kcoords[1]-size/2)**2)
+  
   ps_map = np.interp(k.flatten(), kps, power_spectrum).reshape([size,size])
-  ps_map = ps_map
-  #print(ps_map[0,0])
-  #ps_map[0,0] = zero_freq_val
+
   return ps_map # Carefull, this is not fftshifted
 
 def get_ps_map(map_size, resolution):
-  # resolution = 0.29 # arcmin
-  # pixel_size = np.pi * resolution / 180. / 60. #rad/pixel
-  # map_size = 360 # 4x4 map
-
   ps = np.load('ps_halofit.npy')
   
   pixel_size = np.pi * resolution / 180. / 60. #rad/pixel
-  ell = np.array(ps[0,:])
-  ps_halofit = np.array(ps[1,:] / pixel_size**2) # normalisation by pixel size
-  kell = ell /2/np.pi * 360 * pixel_size / map_size
+  
+  ell = ps[0,:]
+  ps_halofit = ps[1,:] # normalisation by pixel size
+  
+  ks = ell / 2 / np.pi * pixel_size * 360
+  pk = ps_halofit / (pixel_size)**2
 
   # Interpolate the Power Spectrum in Fourier Space
-  ps_map = np.array(make_power_map(ps_halofit, map_size, kps=kell))
+  ps_map = np.array(make_power_map(pk, map_size, kps=ks))
   return ps_map
 
 
@@ -93,7 +92,7 @@ def ks93(g1, g2):
   assert g1.shape == g2.shape
 
   # Compute Fourier space grids
-  (nx, ny) = g1.shape
+  (batch_size, nx, ny) = g1.shape
   k1, k2 = tf.meshgrid(np.fft.fftfreq(ny), np.fft.fftfreq(nx))
 
   g1hat = tf.signal.fft2d(tf.cast(g1, dtype=tf.complex64))
@@ -146,8 +145,10 @@ def ks93inv(kE, kB):
   assert kE.shape == kB.shape
 
   # Compute Fourier space grids
-  (nx, ny) = kE.shape
+  (batch_size, nx, ny) = kE.shape
   k1, k2 = tf.meshgrid(np.fft.fftfreq(ny), np.fft.fftfreq(nx))
+  k1 = tf.expand_dims(k1, 0)
+  k2 = tf.expand_dims(k2, 0)
 
   # Compute Fourier transforms of kE and kB
   kEhat = tf.signal.fft2d(tf.cast(kE, dtype=tf.complex64))
@@ -158,7 +159,7 @@ def ks93inv(kE, kB):
   p2 = 2 * k1 * k2
   k2 = k1 * k1 + k2 * k2
   mask = np.zeros(k2.shape)
-  mask[0, 0] = 1
+  mask[0, 0, 0] = 1
   k2 = k2 + tf.convert_to_tensor(mask)
   p1 = tf.cast(p1, dtype=tf.complex64)
   p2 = tf.cast(p2, dtype=tf.complex64)
