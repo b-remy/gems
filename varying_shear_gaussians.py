@@ -55,7 +55,7 @@ def main(_):
   batch_size = 1
   log_prob = make_log_joint_fn(partial(varying_shear_gaussian_model, batch_size=batch_size, num_gal=N*N, fixed_flux=True))
 
-  scale_factor = 10.
+  scale_factor = .1
   # hlr, gamma and e are free parameters
   def target_log_prob_fn(hlr, gamma, e):
     return log_prob(hlr=hlr,
@@ -69,13 +69,13 @@ def main(_):
       num_leapfrog_steps=3,
       step_size=.00005)
 
-  num_results = 2000
+  num_results = 50000
   num_burnin_steps = 1
 
   # init_hlr = tf.expand_dims(true_params['hlr']*0.-.68, 0)
   # init_gamma = tf.expand_dims(true_params['gamma']*0., 0)
   # init_e = tf.expand_dims(true_params['e']*0., 0)
-  init_hlr = true_params['hlr']*0.#*0.-.68
+  init_hlr = true_params['hlr']*0.-.68
   # init_gamma = true_params['gamma']#*0.
   init_gamma = true_params['latent_shear']*0.#*0.
   init_e = true_params['e']*0.#*0.
@@ -154,6 +154,8 @@ def main(_):
   for i in range(16):
     plt.plot(hlr_est[:,i])
     plt.axhline(true_params['hlr'][0].numpy()[i], color='gray')
+
+  plt.savefig('res/varying_shear/'+job_name+'/hlr.png')
 
 if __name__ == "__main__":
     app.run(main)
