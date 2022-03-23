@@ -7,7 +7,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import arviz as az
 
-import galsim
 import galflow
 lp = galflow.lightprofiles
 import timeit
