@@ -55,10 +55,17 @@ def main(_):
   
   job_name = str(int(time.time()))
   os.mkdir("res/simpler_model/{}".format(job_name))
+  os.mkdir("res/simpler_model/{}/params".format(job_name))
 
   plt.figure()
   plt.imshow(res, cmap='gray_r')
   plt.savefig("res/simpler_model/"+job_name+"/gals.png")
+
+  ## saving true params for later comparison
+  np.save("res/simpler_model/"+job_name+"/params/gals.npy", ims.numpy())
+  np.save("res/simpler_model/"+job_name+"/params/shear.npy", true_params['gamma'].numpy())
+  np.save("res/simpler_model/"+job_name+"/params/e.npy", true_params['e'].numpy())
+  np.save("res/simpler_model/"+job_name+"/params/hlr.npy", true_params['hlr'].numpy())
 
   # Get the joint log prob
   batch_size = 1
