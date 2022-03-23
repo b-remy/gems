@@ -4,7 +4,10 @@ from utils import get_ps_map, ks93inv
 from functools import partial
 
 def latent_to_shear(z, map_width, resolution):
-  
+  """
+  - map_width in pixels
+  - resolution in arcmin/pixel
+  """
   # rescale convergence in Fourier with the right power spectrum
   tf_z = tf.signal.fft2d(tf.cast(z, tf.complex64))
 
@@ -22,6 +25,8 @@ def shear_map(batch_size, map_width, resolution, name="latent_shear"):
   squared shear map
   """
 
+  # TODO: check periodocity
+  
   # latent variable, ps of z is 1
   z = ed.Normal(loc=tf.zeros((batch_size, map_width, map_width)), scale=1., name=name)
   return tf.stack(latent_to_shear(z, map_width, resolution), axis=-1)

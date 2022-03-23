@@ -27,15 +27,15 @@ from shear import latent_to_shear
 _log10 = tf.math.log(10.)
 _scale = 0.03 # COSMOS pixel size in arcsec
 _pi = np.pi
-N = 7 # number of stamp in a row/col
-stamp_size = 64
+# N = 7 # number of stamp in a row/col
+# stamp_size = 64
 
 def main(_):
   begin = time.time()
   # shear_field(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, fixed_flux=False)
   
   stamp_size = 64
-  N = 8
+  N = 23
   batch_size = 1
 
   # Execute probabilistic program and record execution trace
@@ -55,7 +55,7 @@ def main(_):
   batch_size = 1
   log_prob = make_log_joint_fn(partial(varying_shear_gaussian_model, batch_size=batch_size, num_gal=N*N, fixed_flux=True))
 
-  scale_factor = .1
+  scale_factor = 1.
   # hlr, gamma and e are free parameters
   def target_log_prob_fn(hlr, gamma, e):
     return log_prob(hlr=hlr,
@@ -67,18 +67,24 @@ def main(_):
   adaptive_hmc = tfp.mcmc.HamiltonianMonteCarlo(
       target_log_prob_fn=target_log_prob_fn,
       num_leapfrog_steps=3,
-      step_size=.00005)
+      step_size=.0005)
 
-  num_results = 50000
+  num_results = 900
   num_burnin_steps = 1
 
   # init_hlr = tf.expand_dims(true_params['hlr']*0.-.68, 0)
   # init_gamma = tf.expand_dims(true_params['gamma']*0., 0)
   # init_e = tf.expand_dims(true_params['e']*0., 0)
-  init_hlr = true_params['hlr']*0.-.68
+  
+  # init_hlr = true_params['hlr']*0.-.68
+  # # init_gamma = true_params['gamma']#*0.
+  # init_gamma = true_params['latent_shear']*0.#*0.
+  # init_e = true_params['e']*0.#*0.
+  
+  init_hlr = true_params['hlr'] + 0.001*tf.random.normal(true_params['hlr'].numpy().shape)
   # init_gamma = true_params['gamma']#*0.
-  init_gamma = true_params['latent_shear']*0.#*0.
-  init_e = true_params['e']*0.#*0.
+  init_gamma = true_params['latent_shear'] + 0.001*tf.random.normal(true_params['latent_shear'].numpy().shape)
+  init_e = true_params['e'] + 0.01*tf.random.normal(true_params['e'].numpy().shape)
 
   init_state = [init_hlr, init_gamma, init_e]
   # print(init_state.shape)
@@ -104,34 +110,42 @@ def main(_):
 
   hlr_est = samples[0].numpy()[:,0,:]
   shear_est = samples[1].numpy()[:,0,:]/scale_factor
-  shear_est = tf.stack(latent_to_shear(shear_est, 2, 10.), -1)
+  # print(shear_est.shape)
+  # shear_est = shear_est[0]
+  # convert convergence to shear
+  shear_est = tf.stack(latent_to_shear(shear_est, 16, 5.), -1)
   e_est = samples[2].numpy()[:,0,:]
   # gamma_true = custom_shear
+  # shear_true = true_params['latent_shear'].numpy()[0]
+  # print(shear_true.shape)
   shear_true = true_params['latent_shear']
-  shear_true = tf.stack(latent_to_shear(shear_true, 2, 10.), -1)[0,...]
+  shear_true = tf.stack(latent_to_shear(shear_true, 16, 5.), -1)[0,...]
 
   # print(shear_true)
 
   # print(shear_est.shape)
   # print(shear_true.shape)
   # print(shear_est)
+
+  # TODO: COMPARE convergence
+
   plt.figure()
   plt.subplot(221)
   plt.plot(shear_est[:,0,0])
-  plt.axhline(shear_true[0,0,0], color='C0', label='g1')
-  plt.axhline(shear_true[0,0,1], color='C1', label='g2')
+  plt.axhline(shear_true[0,0,0], color='C0', label='g1', alpha=0.2)
+  plt.axhline(shear_true[0,0,1], color='C1', label='g2', alpha=0.2)
   plt.subplot(222)
   plt.plot(shear_est[:,0,1])
-  plt.axhline(shear_true[0,1,0], color='C0', label='g1')
-  plt.axhline(shear_true[0,1,1], color='C1', label='g2')
+  plt.axhline(shear_true[0,1,0], color='C0', label='g1', alpha=0.2)
+  plt.axhline(shear_true[0,1,1], color='C1', label='g2', alpha=0.2)
   plt.subplot(223)
   plt.plot(shear_est[:,1,0])
-  plt.axhline(shear_true[1,0,0], color='C0', label='g1')
-  plt.axhline(shear_true[1,0,1], color='C1', label='g2')
+  plt.axhline(shear_true[1,0,0], color='C0', label='g1', alpha=0.2)
+  plt.axhline(shear_true[1,0,1], color='C1', label='g2', alpha=0.2)
   plt.subplot(224)
   plt.plot(shear_est[:,1,1])
-  plt.axhline(shear_true[1,1,0], color='C0', label='g1')
-  plt.axhline(shear_true[1,1,1], color='C1', label='g2')
+  plt.axhline(shear_true[1,1,0], color='C0', label='g1', alpha=0.2)
+  plt.axhline(shear_true[1,1,1], color='C1', label='g2', alpha=0.2)
   plt.savefig('res/varying_shear/'+job_name+'/shear_inference.png')
 
   plt.figure()

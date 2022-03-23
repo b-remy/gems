@@ -156,14 +156,16 @@ def gaussian_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, fixed_fl
   # Returns likelihood
   return ed.Normal(loc=profile, scale=sigma_e, name="obs")
 
-def varying_shear_gaussian_model(batch_size=1, num_gal=8*8, stamp_size=64, scale=0.03, fixed_flux=False):
+def varying_shear_gaussian_model(batch_size=1, num_gal=8*8, stamp_size=64, scale=0.03, fixed_flux=False, shear_map_width=16, resolution=5.):
   """PGM:
   - Gaussian light profiles
   - Varying intrinsic ellipticity
+    - shear_map_width in pixels
+    - resolution in arcmin/pixel
   - Constant shear
   """
-  shear_map_width = 2 # pixels
-  resolution = 10. # arcmin/pixel
+  # shear_map_width = 16 # pixels
+  # resolution = 5. # arcmin/pixel
   # num_gal_x = 8
   num_gal_x = int(np.sqrt(num_gal))
   # num_gal = num_gal_x**2
