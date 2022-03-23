@@ -52,7 +52,7 @@ def make_power_map(power_spectrum, size, kps=None):
   return ps_map # Carefull, this is not fftshifted
 
 def get_ps_map(map_size, resolution):
-  ps = np.load('ps_halofit.npy')
+  ps = np.load('data/ps_halofit.npy')
   
   pixel_size = np.pi * resolution / 180. / 60. #rad/pixel
   
