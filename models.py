@@ -170,7 +170,7 @@ def varying_shear_gaussian_model(batch_size=1, num_gal=8*8, stamp_size=64, scale
   # num_gal = num_gal_x**2
   # Galaxy positions
   # galaxies on a grid
-  x = np.linspace(0., shear_map_width, num_gal_x)
+  x = np.linspace(0., shear_map_width*resolution, num_gal_x)
   xx, yy = np.meshgrid(x, x)
   # pos_x = tf.reshape(xx, -1)
   # pos_y = tf.reshape(yy, -1)
