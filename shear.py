@@ -9,7 +9,7 @@ def latent_to_shear(z, map_width, resolution):
   - resolution in arcmin/pixel
   """
   # rescale convergence in Fourier with the right power spectrum
-  tf_z = tf.signal.fft2d(tf.cast(z, tf.complex64))
+  tf_z = tf.signal.fftshift(tf.signal.fft2d(tf.cast(z, tf.complex64)), axes=(1,2))
 
   rescale = tf_z * tf.cast(tf.math.sqrt(get_ps_map(map_width, resolution)), tf.complex64)
 
