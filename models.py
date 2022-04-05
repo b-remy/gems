@@ -170,7 +170,7 @@ def varying_shear_gaussian_model(batch_size=1, num_gal=8*8, stamp_size=64, scale
   # num_gal = num_gal_x**2
   # Galaxy positions
   # galaxies on a grid
-  x = np.linspace(0., shear_map_width, num_gal_x)
+  x = np.linspace(0., shear_map_width-1, num_gal_x)
   xx, yy = np.meshgrid(x, x)
   # pos_x = tf.reshape(xx, -1)
   # pos_y = tf.reshape(yy, -1)
@@ -201,7 +201,7 @@ def varying_shear_gaussian_model(batch_size=1, num_gal=8*8, stamp_size=64, scale
   profile = lp.gaussian(half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=scale)
 
   # prior on intrinsic galaxy ellipticity
-  e = ed.Normal(loc=tf.zeros((batch_size, num_gal, 2)), scale=.2, name="e")
+  e = ed.Normal(loc=tf.zeros((batch_size, num_gal, 2)), scale=.1, name="e")
   e = e + 0. # fixes evalutation with tf.Variable()
   e = tf.reshape(e, [batch_size*num_gal, 2])
 
