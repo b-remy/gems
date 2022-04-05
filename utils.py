@@ -94,6 +94,8 @@ def ks93(g1, g2):
   # Compute Fourier space grids
   (batch_size, nx, ny) = g1.shape
   k1, k2 = tf.meshgrid(np.fft.fftfreq(ny), np.fft.fftfreq(nx))
+  k1 = tf.expand_dims(k1, 0)
+  k2 = tf.expand_dims(k2, 0)
 
   g1hat = tf.signal.fft2d(tf.cast(g1, dtype=tf.complex64))
   g2hat = tf.signal.fft2d(tf.cast(g2, dtype=tf.complex64))
@@ -103,7 +105,8 @@ def ks93(g1, g2):
   p2 = 2 * k1 * k2
   k2 = k1 * k1 + k2 * k2
   mask = np.zeros(k2.shape)
-  mask[0, 0] = 1
+  mask[0, 0, 0] = 1   
+
   k2 = k2 + tf.convert_to_tensor(mask)
   p1 = tf.cast(p1, dtype=tf.complex64)
   p2 = tf.cast(p2, dtype=tf.complex64)
