@@ -38,10 +38,13 @@ def main(_):
   N = 23
   batch_size = 1
 
+  shear_map_width = 8
+  resolution = .5
+
   # Execute probabilistic program and record execution trace
   with ed.tape() as true_params:
     # ims =  partial(gaussian_model, fixed_flux=True)(batch_size=N*N, stamp_size=stamp_size)
-    ims =  partial(varying_shear_gaussian_model, fixed_flux=True)(num_gal=N*N, stamp_size=stamp_size)
+    ims =  partial(varying_shear_gaussian_model, fixed_flux=True)(num_gal=N*N, stamp_size=stamp_size, shear_map_width=shear_map_width, resolution=resolution)
   
   res = ims.numpy().reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
 
@@ -53,7 +56,7 @@ def main(_):
   plt.savefig('res/varying_shear/'+job_name+'/gals.png')
 
   batch_size = 1
-  log_prob = make_log_joint_fn(partial(varying_shear_gaussian_model, batch_size=batch_size, num_gal=N*N, fixed_flux=True))
+  log_prob = make_log_joint_fn(partial(varying_shear_gaussian_model, batch_size=batch_size, num_gal=N*N, fixed_flux=True, shear_map_width=shear_map_width, resolution=resolution))
 
   scale_factor = 1.
   # hlr, gamma and e are free parameters
@@ -69,22 +72,20 @@ def main(_):
       num_leapfrog_steps=3,
       step_size=.0005)
 
-  num_results = 900
+  num_results = 30000 #5100#16000
   num_burnin_steps = 1
 
   # init_hlr = tf.expand_dims(true_params['hlr']*0.-.68, 0)
   # init_gamma = tf.expand_dims(true_params['gamma']*0., 0)
   # init_e = tf.expand_dims(true_params['e']*0., 0)
+
+  init_hlr = true_params['hlr']*0.-.68
+  init_gamma = true_params['latent_shear']*0.#*0.
+  init_e = true_params['e']*0.#*0.
   
-  # init_hlr = true_params['hlr']*0.-.68
-  # # init_gamma = true_params['gamma']#*0.
-  # init_gamma = true_params['latent_shear']*0.#*0.
-  # init_e = true_params['e']*0.#*0.
-  
-  init_hlr = true_params['hlr'] + 0.001*tf.random.normal(true_params['hlr'].numpy().shape)
-  # init_gamma = true_params['gamma']#*0.
-  init_gamma = true_params['latent_shear'] + 0.001*tf.random.normal(true_params['latent_shear'].numpy().shape)
-  init_e = true_params['e'] + 0.01*tf.random.normal(true_params['e'].numpy().shape)
+  # init_hlr = true_params['hlr'] + 0.1*tf.random.normal(true_params['hlr'].numpy().shape)
+  # init_gamma = true_params['latent_shear'] + 0.1*tf.random.normal(true_params['latent_shear'].numpy().shape)
+  # init_e = true_params['e'] + 0.1*tf.random.normal(true_params['e'].numpy().shape)
 
   init_state = [init_hlr, init_gamma, init_e]
   # print(init_state.shape)
@@ -113,19 +114,26 @@ def main(_):
   # print(shear_est.shape)
   # shear_est = shear_est[0]
   # convert convergence to shear
-  shear_est = tf.stack(latent_to_shear(shear_est, 16, 5.), -1)
+  shear_est = tf.stack(latent_to_shear(shear_est, shear_map_width, resolution), -1)
   e_est = samples[2].numpy()[:,0,:]
   # gamma_true = custom_shear
   # shear_true = true_params['latent_shear'].numpy()[0]
   # print(shear_true.shape)
   shear_true = true_params['latent_shear']
-  shear_true = tf.stack(latent_to_shear(shear_true, 16, 5.), -1)[0,...]
+  shear_true = tf.stack(latent_to_shear(shear_true, shear_map_width, resolution), -1)[0,...]
 
   # print(shear_true)
 
   # print(shear_est.shape)
   # print(shear_true.shape)
   # print(shear_est)
+
+  os.mkdir("res/varying_shear/{}/params".format(job_name))
+  np.save("res/varying_shear/"+job_name+"/params/gals.npy", ims.numpy())
+  np.save("res/varying_shear/"+job_name+"/params/shear.npy", true_params['latent_shear'].numpy())
+  np.save("res/varying_shear/"+job_name+"/params/shear_est.npy", shear_est.numpy())
+  np.save("res/varying_shear/"+job_name+"/params/e.npy", true_params['e'].numpy())
+  np.save("res/varying_shear/"+job_name+"/params/hlr.npy", true_params['hlr'].numpy())
 
   # TODO: COMPARE convergence
 

@@ -27,8 +27,10 @@ FLAGS = flags.FLAGS
 _log10 = tf.math.log(10.)
 _scale = 0.03 # COSMOS pixel size in arcsec
 _pi = np.pi
-N = 5 # number of stamp in a row/col
 stamp_size = 64
+
+N = 10 # number of stamp in a row/col
+
 
 def main(_):
   begin = time.time()

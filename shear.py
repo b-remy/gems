@@ -3,7 +3,7 @@ import edward2 as ed
 from utils import get_ps_map, ks93inv
 from functools import partial
 
-def latent_to_shear(z, map_width, resolution):
+def latent_to_shear(z, map_width, resolution, output_k=False):
   """
   - map_width in pixels
   - resolution in arcmin/pixel
@@ -18,7 +18,10 @@ def latent_to_shear(z, map_width, resolution):
   # Kaiser-Squires
   g1, g2 = ks93inv(k, tf.zeros_like(k))
   
-  return g1, g2
+  if output_k:
+    return k, g1, g2
+  else:
+    return g1, g2
 
 def shear_map(batch_size, map_width, resolution, name="latent_shear"):
   """
