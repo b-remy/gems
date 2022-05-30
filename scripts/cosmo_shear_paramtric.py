@@ -8,7 +8,7 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 
 from functools import partial
-from ed_utils import make_log_joint_fn
+from gems.ed_utils import make_log_joint_fn
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -19,7 +19,7 @@ import galflow
 lp = galflow.lightprofiles
 import time
 
-from models import gaussian_model, sersic_model, sersic2morph_model
+from gems.models import gaussian_model, sersic_model, sersic2morph_model
 from galsim.bounds import _BoundsI
 
 flags.DEFINE_integer("n", 10, "number of interations")
@@ -100,7 +100,7 @@ def main(_):
           
           # obs_ = obs_ + 0.003 * tf.random.normal(obs_.shape)
           img = galsim.Image(obs_.numpy(), copy=False)
-          #img.addNoise(galsim.Convolve(galr, galr.original_psf).noise)
+          img.addNoise(galsim.Convolve(galr, galr.original_psf).noise)
           seed = ind
           generator = galsim.random.BaseDeviate(seed=seed)
           g_noise = galsim.GaussianNoise(rng=generator, sigma=0.003)

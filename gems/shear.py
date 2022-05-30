@@ -1,6 +1,6 @@
 import tensorflow as tf
 import edward2 as ed
-from utils import get_ps_map, ks93inv
+from gems.utils import get_ps_map, ks93inv
 from functools import partial
 
 def latent_to_shear(z, map_width, resolution, output_k=False):

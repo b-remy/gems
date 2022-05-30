@@ -11,8 +11,8 @@ import galflow
 lp = galflow.lightprofiles
 import timeit
 
-from psf import get_gaussian_psf, get_cosmos_psf
-from shear import shear_map
+from gems.psf import get_gaussian_psf, get_cosmos_psf
+from gems.shear import shear_map
 
 import tensorflow_addons as tfa
 
