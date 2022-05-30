@@ -33,6 +33,8 @@ stamp_size = 64
 N = 10 # number of stamp in a row/col
 
 def main(_):
+  begin = time.time()
+
   num_gal = N*N
 
   cat = galsim.COSMOSCatalog()
@@ -210,7 +212,11 @@ def main(_):
 
   samples, trace = get_samples()
   print('accptance ratio:', trace.is_accepted.numpy().sum()/len(trace.is_accepted.numpy()))
-  
+
+  end = time.time()
+  print('Time: {:.2f}'.format((end - begin)/60.))
+  print('')
+ 
   # hlr_est = samples[0].numpy()[:,0,:]
   gamma_est = samples[0].numpy()[:,0,:]*scale_gamma
   e_est = samples[1].numpy()[:,0,:]*scale_e
