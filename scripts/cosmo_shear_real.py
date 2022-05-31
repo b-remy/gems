@@ -67,9 +67,7 @@ def main(_):
   padding_factor=1
 
   while len(obs) < num_gal:
-    #galr = cat.makeGalaxy(ind, gal_type='real')
-    #psf = galr.original_psf
-    #imkpsf = gpsf2ikpsf(psf, interp_factor, padding_factor, stamp_size, im_scale)
+    galp = cat.makeGalaxy(ind, gal_type='parametric')
     if cat.param_cat['use_bulgefit'][cat.orig_index[ind]] == 0:
       if galp.original.n < 0.4:
         ind += 1
