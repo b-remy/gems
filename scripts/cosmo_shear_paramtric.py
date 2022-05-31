@@ -145,20 +145,20 @@ def main(_):
 
 
 
-  floder_name = 'cosmos_parametric'
+  folder_name = 'cosmos_parametric'
   job_name = str(int(time.time()))
-  os.mkdir("res/"+floder_name+"/{}".format(job_name))
-  os.mkdir("res/"+floder_name+"/{}/params".format(job_name))
+  os.mkdir("res/"+folder_name+"/{}".format(job_name))
+  os.mkdir("res/"+folder_name+"/{}/params".format(job_name))
 
   # plt.figure()
   # plt.imshow(res, cmap='gray_r')
-  # plt.savefig("res/"+floder_name+"/"+job_name+"/gals.png")
+  # plt.savefig("res/"+folder_name+"/"+job_name+"/gals.png")
 
   ## saving true params for later comparison
-  # np.save("res/"+floder_name+"/"+job_name+"/params/gals.npy", ims.numpy())
-  # np.save("res/"+floder_name+"/"+job_name+"/params/shear.npy", true_params['gamma'].numpy())
-  np.save("res/"+floder_name+"/"+job_name+"/params/e.npy", true_e.numpy())
-  np.save("res/"+floder_name+"/"+job_name+"/params/hlr.npy", true_gamma.numpy())
+  # np.save("res/"+folder_name+"/"+job_name+"/params/gals.npy", ims.numpy())
+  # np.save("res/"+folder_name+"/"+job_name+"/params/shear.npy", true_params['gamma'].numpy())
+  np.save("res/"+folder_name+"/"+job_name+"/params/e.npy", true_e.numpy())
+  np.save("res/"+folder_name+"/"+job_name+"/params/hlr.npy", true_gamma.numpy())
 
 
   # Get the joint log prob
@@ -188,9 +188,9 @@ def main(_):
     step_size=.001)
 
 
-  # start_gamma = np.load('/local/home/br263581/Bureau/gems/res/"+floder_name+"/1652309115/samples100_30000_gamma_0.05000000074505806_-0.05000000074505806.npy')
+  # start_gamma = np.load('/local/home/br263581/Bureau/gems/res/"+folder_name+"/1652309115/samples100_30000_gamma_0.05000000074505806_-0.05000000074505806.npy')
   # start_gamma = tf.expand_dims(tf.convert_to_tensor(start_gamma)[-1], axis=0)
-  # start_e = np.load('/local/home/br263581/Bureau/gems/res/"+floder_name+"/1652309115/samples100_30000_e.npy')
+  # start_e = np.load('/local/home/br263581/Bureau/gems/res/"+folder_name+"/1652309115/samples100_30000_e.npy')
   # start_e = tf.expand_dims(tf.convert_to_tensor(start_e)[-1], axis=0)
   @tf.function
   def get_samples():
@@ -222,9 +222,9 @@ def main(_):
   e_est = samples[1].numpy()[:,0,:]*scale_e
   gamma_true = true_gamma.numpy()[0,:]
 
-  np.save("res/"+floder_name+"/"+job_name+"/samples{}_{}_gamma_{}_{}.npy".format(N*N, num_results, gamma_true[0], gamma_true[1]), gamma_est)
-  np.save("res/"+floder_name+"/"+job_name+"/samples{}_{}_e.npy".format(N*N, num_results), e_est)
-  # np.save("res/"+floder_name+"/"+job_name+"/samples{}_{}_r.npy".format(N*N, num_results), hlr_est)
+  np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_gamma_{}_{}.npy".format(N*N, num_results, gamma_true[0], gamma_true[1]), gamma_est)
+  np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_e.npy".format(N*N, num_results), e_est)
+  # np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_r.npy".format(N*N, num_results), hlr_est)
 
 
   print(gamma_est.shape)
@@ -233,13 +233,13 @@ def main(_):
   plt.axhline(gamma_true[0], color='C0', label='g1')
   plt.axhline(gamma_true[1], color='C1', label='g2')
   plt.legend()
-  plt.savefig("res/"+floder_name+"/"+job_name+"/shear.png")
+  plt.savefig("res/"+folder_name+"/"+job_name+"/shear.png")
 
 
   plt.figure()
   plt.subplot(121)
   plt.title('e1')
-  for i in range(10):
+  for i in range(5):
     # print(true_e.numpy().shape)
     # print(true_e.numpy()[0,i,0])
     plt.plot(e_est[:,i,0], label='{}'.format(i))
@@ -250,11 +250,11 @@ def main(_):
 
   plt.subplot(122)
   plt.title('e2')
-  for i in range(8):
+  for i in range(5):
     plt.plot(e_est[:,i,1], label='{}'.format(i))
     plt.axhline(true_e.numpy()[0,i,1], color='gray')
   plt.legend()  
-  plt.savefig("res/"+floder_name+"/"+job_name+"/e.png")
+  plt.savefig("res/"+folder_name+"/"+job_name+"/e.png")
 
 if __name__ == "__main__":
     app.run(main)
