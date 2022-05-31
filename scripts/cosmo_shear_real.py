@@ -109,6 +109,7 @@ def main(_):
     else:
       ind += 1
 
+  obs_64 = tf.expand_dims(tf.stack(obs, axis=0), 0) # [1, batch, nx, ny]
   obs = tf.expand_dims(tf.stack(obs, axis=0), 0)[..., 10:-10, 10:-10] # [1, batch, nx, ny]
   n = tf.expand_dims(tf.stack(n, axis=0), 0)
   flux = tf.expand_dims(tf.stack(flux, axis=0), 0)
@@ -131,11 +132,14 @@ def main(_):
   os.mkdir("res/"+folder_name+"/{}".format(job_name))
   os.mkdir("res/"+folder_name+"/{}/params".format(job_name))
 
-  '''
-  plt.figure()
-  plt.imshow(res, cmap='gray_r')
+  res = obs_64.numpy().reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
+  plt.figure(figsize=(11,11))
+  plt.title('Real galaxies (COSMOS)')
+  s = 1e-3
+  plt.imshow(np.arcsinh(res/s)*s)
   plt.savefig("res/"+folder_name+"/"+job_name+"/gals.png")
 
+  '''
   # saving true params for later comparison
   np.save("res/"+folder_name+"/"+job_name+"/params/gals.npy", ims.numpy())
   np.save("res/"+folder_name+"/"+job_name+"/params/shear.npy", true_params['gamma'].numpy())
