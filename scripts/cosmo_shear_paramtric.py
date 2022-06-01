@@ -185,7 +185,8 @@ def main(_):
     num_leapfrog_steps=3,
     # step_size=.00005)
     # step_size=.0001)
-    step_size=.001)
+    step_size=.002)
+
 
 
   # start_gamma = np.load('/local/home/br263581/Bureau/gems/res/"+folder_name+"/1652309115/samples100_30000_gamma_0.05000000074505806_-0.05000000074505806.npy')

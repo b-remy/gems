@@ -172,7 +172,7 @@ def main(_):
     num_leapfrog_steps=3,
     # step_size=.00005)
     # step_size=.0001)
-    step_size=.001)
+    step_size=.002)
 
   @tf.function
   def get_samples():
