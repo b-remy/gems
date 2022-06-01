@@ -341,9 +341,6 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
   # stamp size
   nx = ny = stamp_size
 
-  # pixel noise std
-  sigma_e = 0.003
-
   # prior on Sersic size half light radius
   # log_l_hlr = ed.Normal(loc=-.68*tf.ones((batch_size, num_gal)), scale=.3, name="hlr")
   # hlr = tf.math.exp(log_l_hlr * _log10)
