@@ -37,7 +37,7 @@ def main(_):
 
   num_gal = N*N
 
-  cat = galsim.COSMOSCatalog()
+  cat = galsim.COSMOSCatalog(sample='23.5')
   index = range(N*N)
   
   gal = cat.makeGalaxy(0, gal_type='real')
@@ -124,8 +124,8 @@ def main(_):
   hlr = tf.expand_dims(tf.stack(hlr, axis=0), 0)
   q_ = tf.expand_dims(tf.stack(q_list, axis=0), 0)
   phi = tf.expand_dims(tf.stack(phi_list, axis=0), 0)
-  e1 = tf.cast((1-q)/(1+q) * tf.math.cos(2*phi), tf.float32)
-  e2 = tf.cast((1-q)/(1+q) * tf.math.sin(2*phi), tf.float32)
+  e1 = tf.cast((1-q_)/(1+q_) * tf.math.cos(2*phi), tf.float32)
+  e2 = tf.cast((1-q_)/(1+q_) * tf.math.sin(2*phi), tf.float32)
 
   # print(n.shape)
   # print(hlr.shape)
