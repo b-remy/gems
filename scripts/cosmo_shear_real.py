@@ -29,6 +29,7 @@ _log10 = tf.math.log(10.)
 _scale = 0.03 # COSMOS pixel size in arcsec
 _pi = np.pi
 stamp_size = 64
+noise_level = 0.01
 
 N = 10 # number of stamp in a row/col
 
@@ -37,7 +38,7 @@ def gpsf2ikpsf(psf, interp_factor, padding_factor, stamp_size, im_scale):
   bounds = _BoundsI(0, Nk//2, -Nk//2, Nk//2-1)
 
   imkpsf = psf.drawKImage(bounds=bounds,
-                        scale=2.*np.pi/(N*padding_factor* im_scale),
+                        scale=2.*np.pi/(stamp_size*padding_factor* im_scale),
                         recenter=False)
   imkpsf = tf.signal.fftshift(tf.reshape(tf.convert_to_tensor(imkpsf.array, tf.complex64), [1, Nk, Nk//2+1]), axes=1)
   return imkpsf
@@ -69,10 +70,10 @@ def main(_):
   while len(obs) < num_gal:
     galp = cat.makeGalaxy(ind, gal_type='parametric')
     if cat.param_cat['use_bulgefit'][cat.orig_index[ind]] == 0:
-      if galp.original.n < 0.4:
+      if galp.original.n < 0.4 or galp.original.half_light_radius > .3:
         ind += 1
       else:
-        if ind_==6 or ind_==93 or ind_==56 or ind_==55:
+        if False:#ind_==6 or ind_==93 or ind_==56 or ind_==55:
           ind+=1
           ind_+=1
         else:
@@ -99,7 +100,7 @@ def main(_):
           img = conv.drawImage(nx=stamp_size, ny=stamp_size, scale=im_scale)
           seed = ind
           generator = galsim.random.BaseDeviate(seed=seed)
-          g_noise = galsim.GaussianNoise(rng=generator, sigma=0.003)
+          g_noise = galsim.GaussianNoise(rng=generator, sigma=noise_level)
           img.addNoise(g_noise)
           obs_ = tf.convert_to_tensor(img.array)
           obs.append(obs_)
@@ -122,7 +123,7 @@ def main(_):
 
   # Ground truth parameters
   true_hlr = hlr
-  true_e = tf.stack([e1, e1], -1)
+  true_e = tf.stack([e1, e2], -1)
   true_gamma = tf.expand_dims(tf.convert_to_tensor([0.05, -0.05]), 0)
 
 
@@ -151,7 +152,7 @@ def main(_):
   # Get the joint log prob
   batch_size = 1
 
-  log_prob = make_log_joint_fn(partial(sersic2morph_model, batch_size=batch_size, num_gal=N*N, kpsf=imkpsfs, fixed_flux=True, n=n, flux=flux, hlr=hlr))
+  log_prob = make_log_joint_fn(partial(sersic2morph_model, batch_size=batch_size, sigma_e=noise_level, num_gal=N*N, kpsf=imkpsfs, fixed_flux=True, n=n, flux=flux, hlr=hlr))
 
   scale_e = 1.
   scale_F = 1.
