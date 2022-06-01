@@ -29,6 +29,7 @@ _log10 = tf.math.log(10.)
 _scale = 0.03 # COSMOS pixel size in arcsec
 _pi = np.pi
 stamp_size = 64
+noise_level = 0.01
 
 N = 10 # number of stamp in a row/col
 
@@ -66,14 +67,13 @@ def main(_):
   while len(obs) < num_gal:
     galp = cat.makeGalaxy(ind, gal_type='parametric')
     if cat.param_cat['use_bulgefit'][cat.orig_index[ind]] == 0:
-      if galp.original.n < 0.4:
+      if False:#galp.original.n < 0.4:
         ind += 1
       else:
-        if ind_==6 or ind_==93 or ind_==56 or ind_==55:
+        if False:#ind_==6 or ind_==93 or ind_==56 or ind_==55:
           ind+=1
           ind_+=1
         else:
-          # gal = cat.makeGalaxy(ind, gal_type='real')
           gal = cat.makeGalaxy(ind, gal_type='parametric')
           galr = cat.makeGalaxy(ind, gal_type='real')
           n.append(galp.original.n)
@@ -105,19 +105,17 @@ def main(_):
           img.addNoise(galsim.Convolve(galr, galr.original_psf).noise)
           seed = ind
           generator = galsim.random.BaseDeviate(seed=seed)
-          g_noise = galsim.GaussianNoise(rng=generator, sigma=0.003)
+          g_noise = galsim.GaussianNoise(rng=generator, sigma=noise_level)
           img.addNoise(g_noise)
           obs_ = tf.convert_to_tensor(img.array)
           obs.append(obs_)
 
-
-          #if ind_==93:
           ind_ += 1
           ind += 1
     else:
       ind += 1
-      # convolve with a constant PSF, from COSMOS index 0
 
+  obs_64 = tf.expand_dims(tf.stack(obs, axis=0), 0)
   obs = tf.expand_dims(tf.stack(obs, axis=0), 0)[..., 10:-10, 10:-10] # [1, batch, nx, ny]
   n = tf.expand_dims(tf.stack(n, axis=0), 0)
   flux = tf.expand_dims(tf.stack(flux, axis=0), 0)
@@ -135,7 +133,7 @@ def main(_):
   
 
   true_hlr = hlr
-  true_e = tf.stack([e1, e1], -1)
+  true_e = tf.stack([e1, e2], -1)
   # print(true_e.shape)
   true_gamma = tf.expand_dims(tf.convert_to_tensor([0.05, -0.05]), 0)
   
@@ -150,9 +148,12 @@ def main(_):
   os.mkdir("res/"+folder_name+"/{}".format(job_name))
   os.mkdir("res/"+folder_name+"/{}/params".format(job_name))
 
-  # plt.figure()
-  # plt.imshow(res, cmap='gray_r')
-  # plt.savefig("res/"+folder_name+"/"+job_name+"/gals.png")
+  res = obs_64.numpy().reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
+  plt.figure(figsize=(11,11))
+  plt.title('Real galaxies (COSMOS)')
+  s = 1e-2
+  plt.imshow(np.arcsinh(res/s)*s)
+  plt.savefig("res/"+folder_name+"/"+job_name+"/gals.png")
 
   ## saving true params for later comparison
   # np.save("res/"+folder_name+"/"+job_name+"/params/gals.npy", ims.numpy())
@@ -164,8 +165,7 @@ def main(_):
   # Get the joint log prob
   batch_size = 1
   # log_prob = ed.make_log_joint_fn(gaussian_model)
-  log_prob = make_log_joint_fn(partial(sersic2morph_model, batch_size=batch_size, num_gal=N*N, kpsf=imkpsf, fixed_flux=True,
-                                      n=n, flux=flux, hlr=hlr))
+  log_prob = make_log_joint_fn(partial(sersic2morph_model, batch_size=batch_size, sigma_e=noise_level, num_gal=N*N, kpsf=imkpsf, fixed_flux=True, n=n, flux=flux, hlr=hlr))
 
   scale_e = 1.
   scale_F = 1.
