@@ -51,7 +51,7 @@ def main(_):
   bounds = _BoundsI(0, Nk//2, -Nk//2, Nk//2-1)
 
   imkpsf = psf.drawKImage(bounds=bounds,
-                        scale=2.*np.pi/(N*padding_factor* im_scale),
+                        scale=2.*np.pi/(stamp_size*padding_factor* im_scale),
                         recenter=False)
   imkpsf = tf.signal.fftshift(tf.reshape(tf.convert_to_tensor(imkpsf.array, tf.complex64), [1, Nk, Nk//2+1]), axes=1)
 
@@ -67,7 +67,7 @@ def main(_):
   while len(obs) < num_gal:
     galp = cat.makeGalaxy(ind, gal_type='parametric')
     if cat.param_cat['use_bulgefit'][cat.orig_index[ind]] == 0:
-      if False:#galp.original.n < 0.4:
+      if galp.original.n < 0.4 or galp.original.half_light_radius > .3:
         ind += 1
       else:
         if False:#ind_==6 or ind_==93 or ind_==56 or ind_==55:
