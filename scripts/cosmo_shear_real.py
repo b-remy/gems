@@ -97,7 +97,7 @@ def main(_):
           conv = galsim.Convolve(galr, psf)
           
           # Add Gaussian noise
-          img = conv.drawImage(nx=stamp_size, ny=stamp_size, scale=im_scale)
+          img = conv.drawImage(nx=stamp_size, ny=stamp_size, scale=im_scale, method='no_pixel')
           seed = ind
           generator = galsim.random.BaseDeviate(seed=seed)
           g_noise = galsim.GaussianNoise(rng=generator, sigma=noise_level)
@@ -152,16 +152,18 @@ def main(_):
   # Get the joint log prob
   batch_size = 1
 
-  log_prob = make_log_joint_fn(partial(sersic2morph_model, batch_size=batch_size, sigma_e=noise_level, num_gal=N*N, kpsf=imkpsfs, fixed_flux=True, n=n, flux=flux, hlr=hlr))
+  log_prob = make_log_joint_fn(partial(sersic2morph_model, batch_size=batch_size, sigma_e=noise_level, num_gal=N*N, kpsf=imkpsfs, fixed_flux=True, n=n, flux=flux, hlr=hlr, fit_centroid=True))
 
   scale_e = 1.
   scale_F = 1.
   scale_gamma = .1
-  def target_log_prob_fn(gamma, e):#, F):
+  scale_shift = 1.
+  def target_log_prob_fn(gamma, e, shift):#, F):
     return log_prob(
             # hlr=hlr,
            gamma=gamma*scale_gamma, # trick to adapt the step size
            e=e*scale_e,
+           shift=shift*scale_shift,
            obs=obs)
 
   num_results = FLAGS.n
@@ -188,6 +190,8 @@ def main(_):
                       # tf.zeros((1, num_gal, 2)), # init with zero ellipticity
                       # start_e,
                       true_e,
+                      true_e*0., # offset shift init to 0.
+                      
         ],
         kernel=adaptive_hmc)
     return samples, trace
@@ -202,14 +206,14 @@ def main(_):
   # hlr_est = samples[0].numpy()[:,0,:]
   gamma_est = samples[0].numpy()[:,0,:]*scale_gamma
   e_est = samples[1].numpy()[:,0,:]*scale_e
+  shift_est = samples[2].numpy()[:,0,:]*scale_shift
   gamma_true = true_gamma.numpy()[0,:]
 
   np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_gamma_{}_{}.npy".format(N*N, num_results, gamma_true[0], gamma_true[1]), gamma_est)
   np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_e.npy".format(N*N, num_results), e_est)
   # np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_r.npy".format(N*N, num_results), hlr_est)
+  np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_shift.npy".format(N*N, num_results), shift_est)
 
-
-  print(gamma_est.shape)
   plt.figure()
   plt.plot(gamma_est)
   plt.axhline(gamma_true[0], color='C0', label='g1')
@@ -237,6 +241,40 @@ def main(_):
     plt.axhline(true_e.numpy()[0,i,1], color='gray')
   plt.legend()
   plt.savefig("res/"+folder_name+"/"+job_name+"/e.png")
+
+  plt.figure()
+  plt.title('offset x')
+  for i in range(5):
+    plt.plot(shift_est[:,i,0], label='{}'.format(i))
+  plt.legend()
+  plt.savefig("res/"+folder_name+"/"+job_name+"/shift.png")
+  
+  with ed.condition(e=e_est.mean(axis=0, keepdims=True),
+                    gamma=gamma_est.mean(axis=0, keepdims=True),
+                    shift=shift_est.mean(axis=0, keepdims=True)):
+    rec1 = sersic2morph_model(batch_size=batch_size, 
+                              sigma_e=noise_level,
+                              num_gal=N*N, 
+                              kpsf=imkpsfs, 
+                              fixed_flux=True, 
+                              n=n, flux=flux, hlr=hlr, 
+                              fit_centroid=True, display=True)
+  im_rec1 = rec1.numpy().reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
+  
+  plt.figure(figsize=(11,11))
+  plt.title('Mean posterior (sersic2morph)')
+  s = 1e-2
+  plt.imshow(np.arcsinh((im_rec1)/s)*s)
+  plt.colorbar()
+  plt.savefig("res/"+folder_name+"/"+job_name+"/mean_posterior.png")
+
+
+  plt.figure(figsize=(11,11))
+  plt.title('Mean posterior (sersic2morph)')
+  s = 1e-2
+  plt.imshow(np.arcsinh((im_rec1-res)/s)*s)
+  plt.colorbar()
+  plt.savefig("res/"+folder_name+"/"+job_name+"/residuals.png")
 
 if __name__ == "__main__":
     app.run(main)
