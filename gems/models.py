@@ -11,6 +11,8 @@ import galflow
 lp = galflow.lightprofiles
 import timeit
 
+from galflow.python.tfutils.transformer import perspective_transform
+
 from gems.psf import get_gaussian_psf, get_cosmos_psf
 from gems.shear import shear_map
 
@@ -330,9 +332,23 @@ def varying_shear_gaussian_model(batch_size=1, num_gal=8*8, stamp_size=64, scale
   # Returns likelihood
   return ed.Normal(loc=profile, scale=sigma_e, name="obs")
 
+def build_transform_matrix(x, y):
+  """
+  x: [batch_size]
+  y: [batch_size]
+  """
+  batch_size = x.shape[0]
+  a = tf.repeat(tf.expand_dims(tf.convert_to_tensor([1., 0.]), 0), batch_size, axis=0)
+  b = tf.repeat(tf.expand_dims(tf.convert_to_tensor([0., 1.]), 0), batch_size, axis=0)
+  zz = tf.repeat(tf.expand_dims(tf.convert_to_tensor([0., 0. ,1.]), 0), batch_size, axis=0)
 
-def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003, fixed_flux=False, kpsf=None, 
-                      hlr=None, n=None, flux=None):
+  xx = tf.concat([a, tf.reshape(x, [batch_size,1])], axis=1)
+  yy = tf.concat([b, tf.reshape(y, [batch_size,1])], axis=1)
+
+  return tf.stack([xx, yy, zz],axis=1)
+
+def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003, fixed_flux=False, kpsf=None, fit_centroid=False,#shift_x=None, shift_y=None,
+                      hlr=None, n=None, flux=None, e=None, gamma=None, display=False):
   """PGM:
   - Sersic light profiles
   - Varying intrinsic ellipticity
@@ -366,8 +382,9 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
   profile = lp.sersic(n=n, half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=scale)
 
   # prior on intrinsic galaxy ellipticity
-  e = ed.Normal(loc=tf.zeros((batch_size, num_gal, 2)), scale=.2, name="e")
-  e = e + 0. # fixes evalutation with tf.Variable()
+  if e is None:
+    e = ed.Normal(loc=tf.zeros((batch_size, num_gal, 2)), scale=.2, name="e")
+    e = e + 0. # fixes evalutation with tf.Variable()
   e = tf.reshape(e, [batch_size*num_gal, 2])
 
   # print('e', e)
@@ -377,7 +394,8 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
   ims = galflow.shear(ims, e[:,0], e[:,1])
 
   # Constant shear in the field
-  gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.05, name="gamma")
+  if gamma is None:
+    gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.05, name="gamma")
 
   # Apply same shear on all images
   ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])
@@ -388,6 +406,22 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
 
   ims = tf.transpose(ims, perm=[0, 3, 1, 2])
   ims = tf.reshape(ims, [batch_size*num_gal, nx, ny, 1])
+
+  # Shift centroid
+  # if (shift_x is None) or (shift_y is None):
+  #   shift_x = tf.zeros(batch_size*num_gal,)
+  #   shift_y = tf.zeros(batch_size*num_gal,)
+
+  if fit_centroid:
+    shift = ed.Normal(loc=tf.zeros((batch_size, num_gal,2)), scale=50., name="shift")
+    shift = shift + 0.
+    shift = tf.reshape(shift, [batch_size*num_gal,2])
+    shift_x = shift[:,0]
+    shift_y = shift[:,1]
+    
+    T = build_transform_matrix(shift_x, shift_y)
+
+    ims = perspective_transform(ims, T)
 
   # Convolve the image with the PSF
   interp_factor = 1
@@ -400,7 +434,8 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
                       interp_factor=interp_factor)[...,0]
 
   profile = tf.reshape(profile, [batch_size, num_gal, nx, ny])
-  profile = profile[...,10:-10, 10:-10]
+  if not display:
+    profile = profile[...,10:-10, 10:-10]
   # print(profile.shape)
 
   # Returns likelihood
