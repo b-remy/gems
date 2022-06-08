@@ -413,7 +413,7 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
   #   shift_y = tf.zeros(batch_size*num_gal,)
 
   if fit_centroid:
-    shift = ed.Normal(loc=tf.zeros((batch_size, num_gal,2)), scale=50., name="shift")
+    shift = ed.Normal(loc=tf.zeros((batch_size, num_gal,2)), scale=5., name="shift")
     shift = shift + 0.
     shift = tf.reshape(shift, [batch_size*num_gal,2])
     shift_x = shift[:,0]
