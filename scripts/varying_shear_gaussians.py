@@ -19,10 +19,10 @@ lp = galflow.lightprofiles
 import time
 import matplotlib.pyplot as plt
 
-from ed_utils import make_log_joint_fn
+from gems.ed_utils import make_log_joint_fn
 
-from models import gaussian_model, varying_shear_gaussian_model
-from shear import latent_to_shear
+from gems.models import gaussian_model, varying_shear_gaussian_model
+from gems.shear import latent_to_shear
 
 _log10 = tf.math.log(10.)
 _scale = 0.03 # COSMOS pixel size in arcsec
@@ -72,7 +72,7 @@ def main(_):
       num_leapfrog_steps=3,
       step_size=.0005)
 
-  num_results = 30000 #5100#16000
+  num_results = 10#30000 #5100#16000
   num_burnin_steps = 1
 
   # init_hlr = tf.expand_dims(true_params['hlr']*0.-.68, 0)
