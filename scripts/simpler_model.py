@@ -8,7 +8,7 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 
 from functools import partial
-from ed_utils import make_log_joint_fn
+from gems.ed_utils import make_log_joint_fn
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -19,7 +19,7 @@ import galflow
 lp = galflow.lightprofiles
 import time
 
-from models import gaussian_model, sersic_model
+from gems.models import gaussian_model, sersic_model
 
 flags.DEFINE_integer("n", 10, "number of interations")
 FLAGS = flags.FLAGS
