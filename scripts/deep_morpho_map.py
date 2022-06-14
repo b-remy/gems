@@ -18,6 +18,7 @@ import galsim
 import galflow
 lp = galflow.lightprofiles
 import time
+from tqdm import tqdm
 
 from gems.models import gaussian_model, sersic_model, sersic2morph_model, deep2morph_model
 from galsim.bounds import _BoundsI
@@ -180,12 +181,35 @@ def main(_):
            obs=obs)
 
   # Initialize latent variable
-  z_init = tf.Variable(tf.zeros([batch_size, num_gal, 16]))
-
+  z_var = tf.Variable(tf.zeros([batch_size, num_gal, 16]))
+  #z_var = tf.zeros([batch_size, num_gal, 16])
+  
+  print(z_var)
+  print('target log prob', target_log_prob_fn(z_var))
+ 
   # Compute the MAP
   #@tf.function
   def loss(z):
     return - target_log_prob_fn(z)
+
+  print('loss', loss(z_var))
+
+  optimizer = tf.keras.optimizers.Adam(learning_rate=1.e-2)
+
+  losses = []
+  for _ in tqdm(range(200)):
+    with tf.GradientTape() as tape:
+      loss_value = loss(z_var)
+    grads = tape.gradient(loss_value, [z_var])
+    optimizer.apply_gradients(zip(grads, [z_var]))
+    losses.append(loss_value.numpy())
+  
+  plt.figure()  
+  plt.plot(losses);
+  plt.savefig("res/"+folder_name+"/"+job_name+"/MAP_loss.png")
+
+
+  print(z_var)
 
 
 

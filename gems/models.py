@@ -468,6 +468,7 @@ def deep2morph_model(batch_size=1, num_gal=25, stamp_size=128, scale=0.03, sigma
   z = ed.Normal(loc=tf.zeros([batch_size, num_gal, 16]), scale=1., name="latent_z")
   z = z + 0.
   z = tf.reshape(z, [batch_size*num_gal, 16])
+  
   samples = code_sample(mag_auto=batch_params['mag_auto'],
                         flux_radius=batch_params['flux_radius'],
                         zphot=batch_params['zphot'],
