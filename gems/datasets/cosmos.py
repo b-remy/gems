@@ -75,7 +75,7 @@ class Cosmos(tfds.core.GeneratorBasedBuilder):
             name=tfds.Split.TRAIN,
             gen_kwargs={
             "offset": 0,
-            "size": 40000,
+            "size": 200000,
             },),
         tfds.core.SplitGenerator(
             name=tfds.Split.TEST,
@@ -90,7 +90,9 @@ class Cosmos(tfds.core.GeneratorBasedBuilder):
     """Yields examples."""
     # Loads the galsim COSMOS catalog
     cat = gs.COSMOSCatalog(sample=self.builder_config.sample)
-    ngal = size 
+    
+    n_rotation = 5
+    ngal = size // n_rotation # number of galaxies that we take from galsim
 
     # Yields
     # - galaxy convolved with the effective psf
@@ -115,30 +117,38 @@ class Cosmos(tfds.core.GeneratorBasedBuilder):
 
     for i in range(ngal):
       gal = cat.makeGalaxy(i+offset)
-      if self.builder_config.effective_psf:
-        cosmos_gal = gs.Convolve(gal, effective_psf)
-        delta_psf = gs.Convolve(gal.original_psf, inv_effective_psf)
-        cosmos_gal = gs.Convolve(cosmos_gal, delta_psf)
+      orig_psf = gal.original_psf
 
-      else:
-        cosmos_gal = gs.Convolve(gal, gal.original_psf)
-      
-      cosmos_stamp = cosmos_gal.drawImage(nx=self.builder_config.stamp_size, 
-                                          ny=self.builder_config.stamp_size, 
-                                          scale=self.builder_config.pixel_scale, 
-                                          method='no_pixel').array.astype('float32')
-                                          
-      if self.builder_config.effective_psf:
-        cosmos_delta_psf_stamp = delta_psf.drawImage(nx=self.builder_config.stamp_size, 
+      for j in range(n_rotation):
+        rotation_angle = gs.Angle(-np.random.rand()* 2 * np.pi, gs.radians)
+        gal = gal.rotate(rotation_angle)
+        orig_psf = orig_psf.rotate(rotation_angle)
+
+        if self.builder_config.effective_psf:
+          cosmos_gal = gs.Convolve(gal, effective_psf)
+          delta_psf = gs.Convolve(orig_psf, inv_effective_psf)
+          cosmos_gal = gs.Convolve(cosmos_gal, delta_psf)
+
+        else:
+          cosmos_gal = gs.Convolve(gal, orig_psf)
+        
+        cosmos_stamp = cosmos_gal.drawImage(nx=self.builder_config.stamp_size, 
                                             ny=self.builder_config.stamp_size, 
-                                            scale=self.builder_config.pixel_scale,
+                                            scale=self.builder_config.pixel_scale, 
                                             method='no_pixel').array.astype('float32')
-      else:
-        cosmos_delta_psf_stamp = gal.original_psf.drawImage(nx=self.builder_config.stamp_size, 
-                                            ny=self.builder_config.stamp_size, 
-                                            scale=self.builder_config.pixel_scale,
-                                            method='no_pixel').array.astype('float32')
+                                            
+        if self.builder_config.effective_psf:
+          cosmos_delta_psf_stamp = delta_psf.drawImage(nx=self.builder_config.stamp_size, 
+                                              ny=self.builder_config.stamp_size, 
+                                              scale=self.builder_config.pixel_scale,
+                                              method='no_pixel').array.astype('float32')
+        else:
+          cosmos_delta_psf_stamp = orig_psf.drawImage(nx=self.builder_config.stamp_size, 
+                                              ny=self.builder_config.stamp_size, 
+                                              scale=self.builder_config.pixel_scale,
+                                              method='no_pixel').array.astype('float32')
 
-      noise_std = np.sqrt(gs.Convolve(gal, gal.original_psf).noise.getVariance())
+        # Get the observerd galaxy image noise standard deviation
+        noise_std = np.sqrt(gs.Convolve(gal, orig_psf).noise.getVariance())
 
-      yield '%d'%i, {"image": cosmos_stamp, "delta_psf":cosmos_delta_psf_stamp, "noise_std":noise_std}
+        yield '%d'%i, {"image": cosmos_stamp, "delta_psf":cosmos_delta_psf_stamp, "noise_std":noise_std}
