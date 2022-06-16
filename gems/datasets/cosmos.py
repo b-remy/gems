@@ -93,7 +93,6 @@ class Cosmos(tfds.core.GeneratorBasedBuilder):
     ngal = size 
 
     # Yields
-    # - uncovolved galaxy image, 
     # - galaxy convolved with the effective psf
     # - delta psf model
     #  
@@ -140,4 +139,6 @@ class Cosmos(tfds.core.GeneratorBasedBuilder):
                                             scale=self.builder_config.pixel_scale,
                                             method='no_pixel').array.astype('float32')
 
-      yield '%d'%i, {"image": cosmos_stamp, "delta_psf":cosmos_delta_psf_stamp}
+      noise_std = np.sqrt(gs.Convolve(gal, gal.original_psf).noise.getVariance())
+
+      yield '%d'%i, {"image": cosmos_stamp, "delta_psf":cosmos_delta_psf_stamp, "noise_std":noise_std}
