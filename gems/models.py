@@ -440,3 +440,84 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
 
   # Returns likelihood
   return  ed.Normal(loc=profile, scale=sigma_e, name="obs")
+
+import tensorflow_hub as hub
+
+encoder = hub.Module('/local/home/br263581/Bureau/deep_galaxy_models/modules/vae_16/encoder')
+decoder = hub.Module('/local/home/br263581/Bureau/deep_galaxy_models/modules/vae_16/decoder')
+code = hub.Module('/local/home/br263581/Bureau/deep_galaxy_models/modules/latent_maf_16/code_sampler')
+
+def dgm2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003, kpsf=None, fit_centroid=False, 
+                    mag_auto_list=None, z_phot_list=None, flux_radius_list=None,
+                    interp_factor=1, padding_factor=1,
+                    #decoder=None, code=None,
+                    # graph=None,
+                    gamma=None, display=False):
+  
+
+  # stamp size
+  nx = ny = stamp_size
+
+  # Conditional parameters
+  mag_auto_g = tf.reshape(tf.convert_to_tensor(mag_auto_list), [-1,])
+  z_phot_g = tf.reshape(tf.convert_to_tensor(z_phot_list), [-1,])
+  flux_radius_g = tf.reshape(tf.convert_to_tensor(flux_radius_list), [-1,])
+
+  # Generate light profiles
+  prior_z = ed.Normal(loc=tf.zeros([batch_size, num_gal, 16]), scale=1, name="prior_z")
+  prior_z = tf.reshape(prior_z, [batch_size*num_gal, 16])
+  
+  z = code({'mag_auto':mag_auto_g, 
+            'flux_radius':flux_radius_g, 
+            'zphot':z_phot_g , 
+            'random_normal':prior_z})
+
+  ims = decoder(z)
+
+  # Constant shear in the field
+  if gamma is None:
+    gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.05, name="gamma")
+
+  # Apply same shear on all images
+  ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])
+  ims = tf.transpose(ims, perm=[0, 2, 3, 1])
+  ims = galflow.shear(ims, 
+                      gamma[:,0],
+                      gamma[:,1])
+
+  ims = tf.transpose(ims, perm=[0, 3, 1, 2])
+  ims = tf.reshape(ims, [batch_size*num_gal, nx, ny, 1])
+
+  # Shift centroid
+  # if (shift_x is None) or (shift_y is None):
+  #   shift_x = tf.zeros(batch_size*num_gal,)
+  #   shift_y = tf.zeros(batch_size*num_gal,)
+
+  if fit_centroid:
+    shift = ed.Normal(loc=tf.zeros((batch_size, num_gal,2)), scale=5., name="shift")
+    shift = shift + 0.
+    shift = tf.reshape(shift, [batch_size*num_gal,2])
+    shift_x = shift[:,0]
+    shift_y = shift[:,1]
+    
+    T = build_transform_matrix(shift_x, shift_y)
+
+    ims = perspective_transform(ims, T)
+
+  # Convolve the image with the PSF
+  interp_factor = interp_factor
+  padding_factor = padding_factor
+  # kpsf = get_gaussian_psf(scale, stamp_size, interp_factor, padding_factor)
+  # kpsf = get_cosmos_psf(stamp_size, scale)
+
+  profile = galflow.convolve(ims, kpsf,
+                      zero_padding_factor=padding_factor,
+                      interp_factor=interp_factor)[...,0]
+
+  profile = tf.reshape(profile, [batch_size, num_gal, nx, ny])
+  if not display:
+    profile = profile[...,10:-10, 10:-10]
+  # print(profile.shape)
+
+  # Returns likelihood
+  return  ed.Normal(loc=profile, scale=sigma_e, name="obs")
