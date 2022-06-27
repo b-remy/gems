@@ -1,14 +1,15 @@
 from absl import app
 from absl import flags
 import os
+from pyrsistent import v
 
-import edward2 as ed
 import tensorflow as tf
 import tensorflow_probability as tfp
+from tensorflow_probability import edward2 as ed
 tfd = tfp.distributions
 
 from functools import partial
-from gems.ed_utils import make_log_joint_fn
+from gems.ed_utils import make_value_setter, make_log_joint_fn
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -44,12 +45,28 @@ def gpsf2ikpsf(psf, interp_factor, padding_factor, stamp_size, im_scale):
   return imkpsf
 
 def main(_):
+
+  # Prepare results storage
+  folder_name = 'cosmos_real'
+  job_name = str(int(time.time()))
+  if not os.path.isdir('./res'):
+    os.mkdir('res')
+    os.mkdir('res/'+folder_name)
+  elif not os.path.isdir('./res'+folder_name):
+    os.mkdir('res/'+folder_name)
+    
+  os.mkdir("res/"+folder_name+"/{}".format(job_name))
+  os.mkdir("res/"+folder_name+"/{}/params".format(job_name))
+
+  # Generate observations
+
   begin = time.time()
 
   num_gal = N*N
 
   # Load galaxies from galsim COSMOS catalog
-  cat = galsim.COSMOSCatalog(sample='23.5')
+  # cat = galsim.COSMOSCatalog(sample='23.5')
+  cat = galsim.COSMOSCatalog(dir='/Users/br263581/miniconda3/envs/gems/lib/python3.6/site-packages/galsim/share/COSMOS_25.2_training_sample')
 
   # Prepare parameters
   obs = []
@@ -122,32 +139,8 @@ def main(_):
   imkpsfs = tf.concat(psfs, axis=0)
 
   # Ground truth parameters
-  true_hlr = hlr
   true_e = tf.stack([e1, e2], -1)
   true_gamma = tf.expand_dims(tf.convert_to_tensor([0.05, -0.05]), 0)
-
-
-  # Prepare results storage
-  folder_name = 'cosmos_real'
-  job_name = str(int(time.time()))
-  os.mkdir("res/"+folder_name+"/{}".format(job_name))
-  os.mkdir("res/"+folder_name+"/{}/params".format(job_name))
-
-  res = obs_64.numpy().reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
-  plt.figure(figsize=(11,11))
-  plt.title('Real galaxies (COSMOS)')
-  s = 1e-3
-  plt.imshow(np.arcsinh(res/s)*s)
-  plt.savefig("res/"+folder_name+"/"+job_name+"/gals.png")
-
-  '''
-  # saving true params for later comparison
-  np.save("res/"+folder_name+"/"+job_name+"/params/gals.npy", ims.numpy())
-  np.save("res/"+folder_name+"/"+job_name+"/params/shear.npy", true_params['gamma'].numpy())
-  '''
-
-  np.save("res/"+folder_name+"/"+job_name+"/params/e.npy", true_e.numpy())
-  np.save("res/"+folder_name+"/"+job_name+"/params/hlr.npy", true_gamma.numpy())
 
   # Get the joint log prob
   batch_size = 1
@@ -197,30 +190,56 @@ def main(_):
     return samples, trace
   
   samples, trace = get_samples()
-  print('accptance ratio:', trace.is_accepted.numpy().sum()/len(trace.is_accepted.numpy()))
 
   end = time.time()
   print('Time: {:.2f}'.format((end - begin)/60.))
   print('')
 
   # hlr_est = samples[0].numpy()[:,0,:]
-  gamma_est = samples[0].numpy()[:,0,:]*scale_gamma
-  e_est = samples[1].numpy()[:,0,:]*scale_e
-  shift_est = samples[2].numpy()[:,0,:]*scale_shift
-  gamma_true = true_gamma.numpy()[0,:]
+  gamma_est = samples[0][:,0,:]*scale_gamma
+  e_est = samples[1][:,0,:]*scale_e
+  shift_est = samples[2][:,0,:]*scale_shift
+  gamma_true = true_gamma[0,:]
+  
+  with ed.interception(make_value_setter(e=tf.reduce_mean(e_est, axis=0, keepdims=True),
+                                        gamma=tf.reduce_mean(gamma_est, axis=0, keepdims=True),
+                                        shift=tf.reduce_mean(shift_est, axis=0, keepdims=True),)):
+    rec1 = sersic2morph_model(batch_size=batch_size, 
+                              sigma_e=noise_level,
+                              num_gal=N*N, 
+                              kpsf=imkpsfs, 
+                              fixed_flux=True, 
+                              n=n, flux=flux, hlr=hlr, 
+                              fit_centroid=True, display=True)
 
+  
+  with tf.Session() as sess:
+    e_est, gamma_est, shift_est, trace, true_e, gamma_true, obs_64, rec1 = sess.run([e_est, gamma_est, shift_est, trace, true_e, gamma_true, obs_64, rec1])
+  
+  print('accptance ratio:', trace.is_accepted.sum()/len(trace.is_accepted))
+  im_rec1 = rec1.reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
+
+  # Save results
+  ## Save observations
+  res = obs_64.reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
+  plt.figure(figsize=(11,11))
+  plt.title('Real galaxies (COSMOS)')
+  s = 1e-3
+  plt.imshow(np.arcsinh(res/s)*s)
+  plt.savefig("res/"+folder_name+"/"+job_name+"/gals.png")
+
+  ## Save chains
   np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_gamma_{}_{}.npy".format(N*N, num_results, gamma_true[0], gamma_true[1]), gamma_est)
   np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_e.npy".format(N*N, num_results), e_est)
-  # np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_r.npy".format(N*N, num_results), hlr_est)
   np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_shift.npy".format(N*N, num_results), shift_est)
 
+  ## Save chains plots
   plt.figure()
   plt.plot(gamma_est)
   plt.axhline(gamma_true[0], color='C0', label='g1')
   plt.axhline(gamma_true[1], color='C1', label='g2')
   plt.legend()
   plt.savefig("res/"+folder_name+"/"+job_name+"/shear.png")
-
 
   plt.figure()
   plt.subplot(121)
@@ -229,16 +248,16 @@ def main(_):
     # print(true_e.numpy().shape)
     # print(true_e.numpy()[0,i,0])
     plt.plot(e_est[:,i,0], label='{}'.format(i))
-    plt.axhline(true_e.numpy()[0,i,0], color='gray')
+    plt.axhline(true_e[0,i,0], color='gray')
   plt.legend()
 
-  print(np.where((e_est[:,:,0]-true_e.numpy()[:,:,0]) > 0.02))
+  print(np.where((e_est[:,:,0]-true_e[:,:,0]) > 0.02))
 
   plt.subplot(122)
   plt.title('e2')
   for i in range(5):
     plt.plot(e_est[:,i,1], label='{}'.format(i))
-    plt.axhline(true_e.numpy()[0,i,1], color='gray')
+    plt.axhline(true_e[0,i,1], color='gray')
   plt.legend()
   plt.savefig("res/"+folder_name+"/"+job_name+"/e.png")
 
@@ -249,18 +268,7 @@ def main(_):
   plt.legend()
   plt.savefig("res/"+folder_name+"/"+job_name+"/shift.png")
   
-  with ed.condition(e=e_est.mean(axis=0, keepdims=True),
-                    gamma=gamma_est.mean(axis=0, keepdims=True),
-                    shift=shift_est.mean(axis=0, keepdims=True)):
-    rec1 = sersic2morph_model(batch_size=batch_size, 
-                              sigma_e=noise_level,
-                              num_gal=N*N, 
-                              kpsf=imkpsfs, 
-                              fixed_flux=True, 
-                              n=n, flux=flux, hlr=hlr, 
-                              fit_centroid=True, display=True)
-  im_rec1 = rec1.numpy().reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
-  
+  ## Save fitted image
   plt.figure(figsize=(11,11))
   plt.title('Mean posterior (sersic2morph)')
   s = 1e-2
