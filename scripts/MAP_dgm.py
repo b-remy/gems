@@ -43,7 +43,7 @@ def gpsf2ikpsf(psf, interp_factor, padding_factor, stamp_size, im_scale):
 
 def main(_):
   # Prepare results storage
-  folder_name = 'dgm'
+  folder_name = 'dgm_MAP'
   job_name = str(int(time.time()))
   if not os.path.isdir('./res'):
     os.mkdir('res')
@@ -56,7 +56,8 @@ def main(_):
 
 
   num_gal = N*N
-  cat = galsim.COSMOSCatalog(dir='/local/home/br263581/miniconda3/envs/gems/lib/python3.6/site-packages/galsim/share/COSMOS_25.2_training_sample')
+  cat = galsim.COSMOSCatalog(dir='/gpfswork/rech/xdy/commun/galsim_catalogs/COSMOS_25.2_training_sample')
+  #cat = galsim.COSMOSCatalog(dir='/local/home/br263581/miniconda3/envs/gems/lib/python3.6/site-packages/galsim/share/COSMOS_25.2_training_sample')
   index = range(N*N)
 
   # Prepare parameters
@@ -157,28 +158,29 @@ def main(_):
                                       mag_auto_list=mag_auto_list, 
                                       z_phot_list=z_phot_list, 
                                       flux_radius_list=flux_radius_list,
-                                      gamma = true_gamma*0.,
                                       fit_centroid=False))
 
-  #TODO: find a solution for tf.function...
-  # @tf.function
-  def target_log_prob_fn(prior_z):
+  scale_gamma = 0.1
+
+  def target_log_prob_fn(prior_z, gamma):
     return log_prob(
         prior_z=prior_z,
+        gamma=gamma*scale_gamma,
         obs=obs)
 
-  def loss_fn(lz):
-    return - target_log_prob_fn(lz)  
+  def loss_fn(lz, gamma):
+    return - target_log_prob_fn(lz, gamma)  
 
   # Initialize variable
   lz = tf.Variable(tf.zeros([batch_size, num_gal,16]), trainable=True, dtype=tf.float32)
-  
+  gamma = tf.Variable(tf.zeros([batch_size, 2]), trainable=True, dtype=tf.float32)
+
   # Evaluate loss
-  loss = loss_fn(lz)
+  loss = loss_fn(lz, gamma)
   
   # Define the optimizer
   optimizer = tf.train.AdamOptimizer(learning_rate=0.1)
-  train = optimizer.minimize(loss, var_list=lz)
+  train = optimizer.minimize(loss, var_list=[lz, gamma])
 
   # initialize the variables
   init = tf.global_variables_initializer()
@@ -187,9 +189,11 @@ def main(_):
 
   losses = []
   for i in tqdm(range(100)):
-      _, l, s_res = sess.run([train, loss, lz])
+      _, l, lz_, g_ = sess.run([train, loss, lz, gamma])
       losses.append(l)
-      
+
+  print('g_MAP:', g_*scale_gamma)
+
   plt.figure()
   plt.plot(losses)
   plt.savefig("res/"+folder_name+"/"+job_name+"/losses.png")
@@ -206,7 +210,7 @@ def main(_):
   plt.savefig("res/"+folder_name+"/"+job_name+"/obs.png")
 
 
-  with ed.interception(make_value_setter(prior_z=lz,)):
+  with ed.interception(make_value_setter(prior_z=lz, gamma=gamma*scale_gamma)):
     res_fit = dgm2morph_model(batch_size=batch_size, 
                                  sigma_e=noise_level, 
                                  stamp_size=stamp_size,
@@ -217,7 +221,6 @@ def main(_):
                                  mag_auto_list=mag_auto_list, 
                                  z_phot_list=z_phot_list, 
                                  flux_radius_list=flux_radius_list,
-                                 gamma = true_gamma*0.,
                                  fit_centroid=False, display=True)
 
   res_fit_ = sess.run(res_fit)
@@ -238,6 +241,8 @@ def main(_):
   plt.colorbar()
   plt.savefig("res/"+folder_name+"/"+job_name+"/residuals.png")
   
+  np.save("res/"+folder_name+"/"+job_name+"/latent_z", lz_)
+  np.save("res/"+folder_name+"/"+job_name+"/gamma", g_*scale_gamma)
 
 if __name__ == "__main__":
     app.run(main)

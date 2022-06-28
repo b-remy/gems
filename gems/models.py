@@ -449,9 +449,9 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
 
 import tensorflow_hub as hub
 
-encoder = hub.Module('../../deep_galaxy_models/modules/vae_16/encoder')
-decoder = hub.Module('../../deep_galaxy_models/modules/vae_16/decoder')
-code = hub.Module('../../deep_galaxy_models/modules/latent_maf_16/code_sampler')
+encoder = hub.Module('../deep_galaxy_models/modules/vae_16/encoder')
+decoder = hub.Module('../deep_galaxy_models/modules/vae_16/decoder')
+code = hub.Module('../deep_galaxy_models/modules/latent_maf_16/code_sampler')
 
 def dgm2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003, kpsf=None, fit_centroid=False, 
                     mag_auto_list=None, z_phot_list=None, flux_radius_list=None,
