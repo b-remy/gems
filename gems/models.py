@@ -347,7 +347,10 @@ def build_transform_matrix(x, y):
 
   return tf.stack([xx, yy, zz],axis=1)
 
-def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003, fixed_flux=False, kpsf=None, fit_centroid=False,#shift_x=None, shift_y=None,
+def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003, fixed_flux=False, kpsf=None, 
+                      fit_centroid=False,#shift_x=None, shift_y=None,
+                      interp_factor=1,
+                      padding_factor=1,
                       hlr=None, n=None, flux=None, e=None, gamma=None, display=False):
   """PGM:
   - Sersic light profiles
@@ -358,14 +361,17 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
   nx = ny = stamp_size
 
   # prior on Sersic size half light radius
-  # log_l_hlr = ed.Normal(loc=-.68*tf.ones((batch_size, num_gal)), scale=.3, name="hlr")
-  # hlr = tf.math.exp(log_l_hlr * _log10)
-  
-  hlr = tf.reshape(hlr, [-1])
+  if hlr is None:
+    log_l_hlr = ed.Normal(loc=-.68*tf.ones((batch_size, num_gal)), scale=.3, name="hlr")
+    hlr = tf.math.exp(log_l_hlr * _log10)
+  else:
+    hlr = tf.reshape(hlr, [-1])
 
   # prior on Sersic index n
-  # log_l_n = ed.Normal(loc=.1*tf.ones((batch_size, num_gal)), scale=.39, name="n")
-  # n = tf.math.exp(log_l_n * _log10)
+  
+    # log_l_n = ed.Normal(loc=.1*tf.ones((batch_size, num_gal)), scale=.39, name="n")
+    # n = tf.math.exp(log_l_n * _log10)
+  
   n = tf.reshape(n, [-1])
   # n = n
 
@@ -424,8 +430,8 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
     ims = perspective_transform(ims, T)
 
   # Convolve the image with the PSF
-  interp_factor = 1
-  padding_factor = 1
+  interp_factor = interp_factor
+  padding_factor = padding_factor
   # kpsf = get_gaussian_psf(scale, stamp_size, interp_factor, padding_factor)
   # kpsf = get_cosmos_psf(stamp_size, scale)
 
@@ -452,9 +458,9 @@ def dgm2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e
                     interp_factor=1, padding_factor=1,
                     #decoder=None, code=None,
                     # graph=None,
+                    # decoder=None, code=None,
                     gamma=None, display=False):
   
-
   # stamp size
   nx = ny = stamp_size
 
@@ -494,7 +500,7 @@ def dgm2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e
   #   shift_y = tf.zeros(batch_size*num_gal,)
 
   if fit_centroid:
-    shift = ed.Normal(loc=tf.zeros((batch_size, num_gal,2)), scale=5., name="shift")
+    shift = ed.Normal(loc=tf.zeros((batch_size, num_gal,2)), scale=1., name="shift")
     shift = shift + 0.
     shift = tf.reshape(shift, [batch_size*num_gal,2])
     shift_x = shift[:,0]
