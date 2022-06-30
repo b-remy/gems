@@ -465,9 +465,14 @@ def dgm2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e
   nx = ny = stamp_size
 
   # Conditional parameters
-  mag_auto_g = tf.reshape(tf.convert_to_tensor(mag_auto_list), [-1,])
-  z_phot_g = tf.reshape(tf.convert_to_tensor(z_phot_list), [-1,])
-  flux_radius_g = tf.reshape(tf.convert_to_tensor(flux_radius_list), [-1,])
+  # handle batch_size
+
+  mag_auto_g = tf.reshape(tf.convert_to_tensor(mag_auto_list), [1,-1])
+  z_phot_g = tf.reshape(tf.convert_to_tensor(z_phot_list), [1,-1])
+  flux_radius_g = tf.reshape(tf.convert_to_tensor(flux_radius_list), [1,-1])
+  mag_auto_g = tf.reshape(tf.repeat(mag_auto_g, repeats=batch_size, axis=0), [batch_size*num_gal,])
+  z_phot_g = tf.reshape(tf.repeat(z_phot_g, repeats=batch_size, axis=0), [batch_size*num_gal,])
+  flux_radius_g = tf.reshape(tf.repeat(flux_radius_g, repeats=batch_size, axis=0), [batch_size*num_gal,])
 
   # Generate light profiles
   prior_z = ed.Normal(loc=tf.zeros([batch_size, num_gal, 16]), scale=1, name="prior_z")
@@ -516,6 +521,11 @@ def dgm2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e
   # kpsf = get_gaussian_psf(scale, stamp_size, interp_factor, padding_factor)
   # kpsf = get_cosmos_psf(stamp_size, scale)
 
+  kpsf_shape = kpsf.shape
+  kpsf = tf.repeat(tf.expand_dims(kpsf, 0), repeats=batch_size, axis=0)
+  kpsf = tf.reshape(kpsf, [batch_size*kpsf_shape[0], kpsf_shape[1], kpsf_shape[2]])
+
+  # handle batch_size
   profile = galflow.convolve(ims, kpsf,
                       zero_padding_factor=padding_factor,
                       interp_factor=interp_factor)[...,0]
