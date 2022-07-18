@@ -1,8 +1,103 @@
-"""Transformations of Edward2 programs."""
+"""Transformations of Edward2 programs.
+Compatible with tensorflow_probability==0.7.0
+"""
 
-import inspect
-from edward2.trace import trace
 import tensorflow as tf
+import inspect
+import six
+from tensorflow_probability.python.edward2.interceptor import interceptable
+from tensorflow_probability.python.edward2.interceptor import interception
+
+__all__ = [
+    "make_log_joint_fn",
+    "make_value_setter"
+]
+
+def make_value_setter(**model_kwargs):
+  """Creates a value-setting interceptor.
+  This function creates an interceptor that sets values of Edward2 random
+  variable objects. This is useful for a range of tasks, including conditioning
+  on observed data, sampling from posterior predictive distributions, and as a
+  building block of inference primitives such as computing log joint
+  probabilities (see examples below).
+  Args:
+    **model_kwargs: dict of str to Tensor. Keys are the names of random
+      variables in the model to which this interceptor is being applied. Values
+      are Tensors to set their value to. Variables not included in this dict
+      will not be set and will maintain their existing value semantics (by
+      default, a sample from the parent-conditional distribution).
+  Returns:
+    set_values: function that sets the value of intercepted ops.
+  #### Examples
+  Consider for illustration a model with latent `z` and
+  observed `x`, and a corresponding trainable posterior model:
+  ```python
+  num_observations = 10
+  def model():
+    z = ed.Normal(loc=0, scale=1., name='z')  # log rate
+    x = ed.Poisson(rate=tf.exp(z) * tf.ones(num_observations), name='x')
+    return x
+  def variational_model():
+    return ed.Normal(loc=tf.Variable(0.),
+                     scale=tf.nn.softplus(tf.Variable(-4.)),
+                     name='z')  # for simplicity, match name of the model RV.
+  ```
+  We can use a value-setting interceptor to condition the model on observed
+  data. This approach is slightly more cumbersome than that of partially
+  evaluating the complete log-joint function, but has the potential advantage
+  that it returns a new model callable, which may be used to sample downstream
+  variables, passed into additional transformations, etc.
+  ```python
+  x_observed = np.array([6, 3, 1, 8, 7, 0, 6, 4, 7, 5])
+  def observed_model():
+    with ed.interception(make_value_setter(x=x_observed)):
+      model()
+  observed_log_joint_fn = ed.make_log_joint_fn(observed_model)
+  # After fixing 'x', the observed log joint is now only a function of 'z'.
+  # This enables us to define a variational lower bound,
+  # `E_q[ log p(x, z) - log q(z)]`, simply by evaluating the observed and
+  # variational log joints at variational samples.
+  variational_log_joint_fn = ed.make_log_joint_fn(variational_model)
+  with ed.tape() as variational_sample:  # Sample trace from variational model.
+    variational_model()
+  elbo_loss = -(observed_log_joint_fn(**variational_sample) -
+                variational_log_joint_fn(**variational_sample))
+  ```
+  After performing inference by minimizing the variational loss, a value-setting
+  interceptor enables simulation from the posterior predictive distribution:
+  ```python
+  with ed.tape() as posterior_samples:  # tape is a map {rv.name : rv}
+    variational_model()
+  with ed.interception(ed.make_value_setter(**posterior_samples)):
+    x = model()
+  # x is a sample from p(X | Z = z') where z' ~ q(z) (the variational model)
+  ```
+  As another example, using a value setter inside of `ed.tape` enables
+  computing the log joint probability, by setting all variables to
+  posterior values and then accumulating the log probs of those values under
+  the induced parent-conditional distributions. This is one way that we could
+  have implemented `ed.make_log_joint_fn`:
+  ```python
+  def make_log_joint_fn_demo(model):
+    def log_joint_fn(**model_kwargs):
+      with ed.tape() as model_tape:
+        with ed.make_value_setter(**model_kwargs):
+          model()
+      # accumulate sum_i log p(X_i = x_i | X_{:i-1} = x_{:i-1})
+      log_prob = 0.
+      for rv in model_tape.values():
+        log_prob += tf.reduce_sum(rv.log_prob(rv.value))
+      return log_prob
+    return log_joint_fn
+  ```
+  """
+  def set_values(f, *args, **kwargs):
+    """Sets random variable values to its aligned value."""
+    name = kwargs.get("name")
+    if name in model_kwargs:
+      kwargs["value"] = model_kwargs[name]
+    return interceptable(f)(*args, **kwargs)
+  return set_values
 
 def make_log_joint_fn(model):
   """Takes Edward probabilistic program and returns its log joint function.
@@ -18,7 +113,7 @@ def make_log_joint_fn(model):
   representing the model's generative process. We apply `make_log_joint_fn` in
   order to represent the model in terms of its joint probability function.
   ```python
-  import edward2 as ed
+  from tensorflow_probability import edward2 as ed
   def logistic_regression(features):
     coeffs = ed.Normal(loc=0., scale=1.,
                        sample_shape=features.shape[1], name="coeffs")
@@ -26,9 +121,9 @@ def make_log_joint_fn(model):
                             name="outcomes")
     return outcomes
   log_joint = ed.make_log_joint_fn(logistic_regression)
-  features = tf.random.normal([3, 2])
-  coeffs_value = tf.random.normal([2])
-  outcomes_value = tf.round(tf.random.uniform([3]))
+  features = tf.random_normal([3, 2])
+  coeffs_value = tf.random_normal([2])
+  outcomes_value = tf.round(tf.random_uniform([3]))
   output = log_joint(features, coeffs=coeffs_value, outcomes=outcomes_value)
   ```
   """
@@ -49,14 +144,19 @@ def make_log_joint_fn(model):
     """
     log_probs = []
 
-    def tracer(rv_constructor, *rv_args, **rv_kwargs):
+    def interceptor(rv_constructor, *rv_args, **rv_kwargs):
       """Overrides a random variable's `value` and accumulates its log-prob."""
       # Set value to keyword argument indexed by `name` (an input tensor).
       rv_name = rv_kwargs.get("name")
       if rv_name is None:
         raise KeyError("Random variable constructor {} has no name "
                        "in its arguments.".format(rv_constructor.__name__))
-      value = kwargs.get(rv_name)
+
+      # If no value is explicitly passed in for an RV, default to the value
+      # from the RV constructor. This may have been set explicitly by the user
+      # or forwarded from a lower-level interceptor.
+      previously_specified_value = rv_kwargs.get("value")
+      value = kwargs.get(rv_name, previously_specified_value)
       if value is None:
         raise LookupError("Keyword argument specifying value for {} is "
                           "missing.".format(rv_name))
@@ -72,11 +172,9 @@ def make_log_joint_fn(model):
       return rv
 
     model_kwargs = _get_function_inputs(model, kwargs)
-    with trace(tracer):
+    with interception(interceptor):
       model(*args, **model_kwargs)
-    
-    log_probs = tf.convert_to_tensor(log_probs)
-    log_prob = tf.reduce_sum(log_probs, axis=0)
+    log_prob = sum(log_probs)
     return log_prob
   return log_joint_fn
 
@@ -94,9 +192,9 @@ def _get_function_inputs(f, src_kwargs):
     f = f._func  # pylint: disable=protected-access
 
   try:  # getargspec was deprecated in Python 3.6
-    argspec = inspect.getfullargspec(f)  # pytype: disable=module-attr
+    argspec = inspect.getfullargspec(f)
   except AttributeError:
     argspec = inspect.getargspec(f)
 
-  fkwargs = {k: v for k, v in src_kwargs.items() if k in argspec.args}
+  fkwargs = {k: v for k, v in six.iteritems(src_kwargs) if k in argspec.args}
   return fkwargs

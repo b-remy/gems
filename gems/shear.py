@@ -1,5 +1,5 @@
 import tensorflow as tf
-import edward2 as ed
+from tensorflow_probability import edward2 as ed
 from gems.utils import get_ps_map, ks93inv
 from functools import partial
 
