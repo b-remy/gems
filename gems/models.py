@@ -23,7 +23,7 @@ _pi = np.pi
 
 ### Forward models
 
-def sersic_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003, fixed_flux=False):
+def sersic_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003,fixed_flux=False):
   """PGM:
   - Sersic light profiles
   - Varying intrinsic ellipticity
@@ -348,6 +348,7 @@ def build_transform_matrix(x, y):
   return tf.stack([xx, yy, zz],axis=1)
 
 def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003, fixed_flux=False, kpsf=None, 
+                      flat_prior_e=False,
                       fit_centroid=False,#shift_x=None, shift_y=None,
                       interp_factor=1,
                       padding_factor=1,
@@ -389,8 +390,12 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
 
   # prior on intrinsic galaxy ellipticity
   if e is None:
-    e = ed.Normal(loc=tf.zeros((batch_size, num_gal, 2)), scale=.2, name="e")
-    e = e + 0. # fixes evalutation with tf.Variable()
+    if flat_prior_e:
+      e = ed.Uniform(low=-.75*tf.ones([batch_size, num_gal, 2]), high=.75*tf.ones([batch_size, num_gal, 2]), name="e")
+      e = e + 0. # fixes evalutation with tf.Variable()
+    else:
+      e = ed.Normal(loc=tf.zeros((batch_size, num_gal, 2)), scale=.2, name="e")
+      e = e + 0. # fixes evalutation with tf.Variable()
   e = tf.reshape(e, [batch_size*num_gal, 2])
 
   # print('e', e)
@@ -419,7 +424,7 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
   #   shift_y = tf.zeros(batch_size*num_gal,)
 
   if fit_centroid:
-    shift = ed.Normal(loc=tf.zeros((batch_size, num_gal,2)), scale=5., name="shift")
+    shift = ed.Normal(loc=tf.zeros((batch_size, num_gal,2)), scale=1., name="shift")
     shift = shift + 0.
     shift = tf.reshape(shift, [batch_size*num_gal,2])
     shift_x = shift[:,0]
@@ -441,7 +446,8 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
 
   profile = tf.reshape(profile, [batch_size, num_gal, nx, ny])
   if not display:
-    profile = profile[...,10:-10, 10:-10]
+    k=10
+    profile = profile[...,k:-k, k:-k]
   # print(profile.shape)
 
   # Returns likelihood
@@ -522,7 +528,8 @@ def dgm2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e
 
   profile = tf.reshape(profile, [batch_size, num_gal, nx, ny])
   if not display:
-    profile = profile[...,10:-10, 10:-10]
+    k = 10
+    profile = profile[...,k:-k, k:-k]
   # print(profile.shape)
 
   # Returns likelihood
