@@ -99,8 +99,10 @@ def main(_):
     galp = cat.makeGalaxy(ind, gal_type='parametric')
     if cat.param_cat['use_bulgefit'][cat.orig_index[ind]] == 0:
       #if galp.original.n < 0.4 or galp.original.half_light_radius > .3 or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 23.5:
-      if galp.original.n < 0.4 or galp.original.half_light_radius > 7. or cat.param_cat['mag_auto'][cat.orig_index[ind]] > 22.8  or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 22 or ind==2020:
+      #if galp.original.n < 0.4 or galp.original.half_light_radius > 7. or cat.param_cat['mag_auto'][cat.orig_index[ind]] > 22.8  or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 22 or ind==2020:
+      if galp.original.n < 0.4 or galp.original.half_light_radius > .3:
         ind += 1
+
       else:
         if False:#ind_==6 or ind_==93 or ind_==56 or ind_==55:
           ind+=1
@@ -143,7 +145,9 @@ def main(_):
     else:
       ind += 1
 
-  obs_64 = tf.expand_dims(tf.stack(obs, axis=0), 0) # [1, batch, nx, ny]
+  #obs_64 = tf.expand_dims(tf.stack(obs, axis=0), 0) # [1, batch, nx, ny]
+  obs_64 = tf.convert_to_tensor(np.load('res/cosmos_parametric/1659970897/obs.npy'), tf.float32)
+
   k = 10
   obs = tf.expand_dims(tf.stack(obs, axis=0), 0)[..., k:-k, k:-k] # [1, batch, nx, ny]
   n = tf.expand_dims(tf.stack(n, axis=0), 0)
@@ -201,7 +205,7 @@ def main(_):
     num_leapfrog_steps=3,
     # step_size=.00005)
     # step_size=.0001)
-    step_size=.001)
+    step_size=.005)
 
 
   def get_samples():
@@ -210,10 +214,11 @@ def main(_):
         num_burnin_steps=num_burnin_steps,
         current_state=[
           # hlr, # init with prior mean
-                      true_hlr/scale_hlr,
+                      #true_hlr/scale_hlr,
+                      tf.math.log(true_hlr)/tf.math.log(10.)/scale_hlr,
                       # tf.zeros((1, 2)), # init with zero shear
                       # start_gamma,
-                      true_gamma/scale_gamma,
+                      true_gamma/scale_gamma*0.,
                       # tf.zeros((1, num_gal, 2)), # init with zero ellipticity
                       # start_e,
                       true_e,
@@ -286,7 +291,8 @@ def main(_):
   plt.title('hlr')
   for i in range(5):
     plt.plot(hlr_est[:,i], label='{}'.format(i))
-    plt.axhline(true_hlr[0,i], color='gray')
+    #plt.axhline(true_hlr[0,i], color='gray')
+    plt.axhline(np.log(true_hlr[0,i])/np.log(10.), color='gray')
   plt.legend()
   plt.savefig("res/"+folder_name+"/"+job_name+"/hlr.png")
     
