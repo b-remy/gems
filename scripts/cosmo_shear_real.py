@@ -52,7 +52,7 @@ def main(_):
   if not os.path.isdir('./res'):
     os.mkdir('res')
     os.mkdir('res/'+folder_name)
-  elif not os.path.isdir('./res'+folder_name):
+  elif not os.path.isdir('./res/'+folder_name):
     os.mkdir('res/'+folder_name)
     
   os.mkdir("res/"+folder_name+"/{}".format(job_name))
@@ -66,8 +66,9 @@ def main(_):
 
   # Load galaxies from galsim COSMOS catalog
   # cat = galsim.COSMOSCatalog(sample='23.5')
-  cat = galsim.COSMOSCatalog(dir='/Users/br263581/miniconda3/envs/gems/lib/python3.6/site-packages/galsim/share/COSMOS_25.2_training_sample')
+  #cat = galsim.COSMOSCatalog(dir='/Users/br263581/miniconda3/envs/gems/lib/python3.6/site-packages/galsim/share/COSMOS_25.2_training_sample')
 
+  cat = galsim.COSMOSCatalog()
   # Prepare parameters
   obs = []
   n = []
@@ -87,7 +88,7 @@ def main(_):
   while len(obs) < num_gal:
     galp = cat.makeGalaxy(ind, gal_type='parametric')
     if cat.param_cat['use_bulgefit'][cat.orig_index[ind]] == 0:
-      if galp.original.n < 0.4 or galp.original.half_light_radius > .3:
+      if galp.original.n < 0.4 or galp.original.half_light_radius > .3 or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 23.5:
         ind += 1
       else:
         if False:#ind_==6 or ind_==93 or ind_==56 or ind_==55:
@@ -110,7 +111,7 @@ def main(_):
           psfs.append(imkpsf)
 
           # Apply shear
-          galr.shear(g1=0.05, g2=-0.05)
+          galr = galr.shear(g1=0.05, g2=-0.05)
           conv = galsim.Convolve(galr, psf)
           
           # Add Gaussian noise
@@ -153,7 +154,7 @@ def main(_):
   scale_shift = 1.
   def target_log_prob_fn(gamma, e, shift):#, F):
     return log_prob(
-            # hlr=hlr,
+           hlr=hlr,
            gamma=gamma*scale_gamma, # trick to adapt the step size
            e=e*scale_e,
            shift=shift*scale_shift,
