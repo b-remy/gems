@@ -1,38 +1,42 @@
+# import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 from absl import app
 from absl import flags
+import time
 import os
-from pyrsistent import v
 
 import tensorflow as tf
 import tensorflow_probability as tfp
-from tensorflow_probability import edward2 as ed
 tfd = tfp.distributions
+from tensorflow_probability import edward2 as ed
 
-from functools import partial
+from gems.models import sersic2morph_model, dgm2morph_model
 from gems.ed_utils import make_value_setter, make_log_joint_fn
 
+from tqdm import tqdm
+
 import numpy as np
-import matplotlib.pyplot as plt
-import arviz as az
+from functools import partial
 
 import galsim
-import galflow
-lp = galflow.lightprofiles
-import time
-
-from gems.models import gaussian_model, sersic_model, sersic2morph_model
 from galsim.bounds import _BoundsI
 
-flags.DEFINE_integer("n", 10, "number of interations")
-FLAGS = flags.FLAGS
+import matplotlib.pyplot as plt
 
 _log10 = tf.math.log(10.)
 _scale = 0.03 # COSMOS pixel size in arcsec
 _pi = np.pi
-stamp_size = 64
+stamp_size = 128
 noise_level = 0.01
 
-N = 10 # number of stamp in a row/col
+N=10
+
+flags.DEFINE_integer("n", 10, "number of interations")
+flags.DEFINE_string("samples_path", None, "number of interations")
+flags.DEFINE_boolean("MAP", False, "number of interations")
+flags.DEFINE_string("catalog", "25.2", "number of interations")
+flags.DEFINE_boolean("flat_p_e", False, "")
+FLAGS = flags.FLAGS
 
 def gpsf2ikpsf(psf, interp_factor, padding_factor, stamp_size, im_scale):
   Nk = stamp_size*interp_factor*padding_factor
@@ -45,9 +49,8 @@ def gpsf2ikpsf(psf, interp_factor, padding_factor, stamp_size, im_scale):
   return imkpsf
 
 def main(_):
-
   # Prepare results storage
-  folder_name = 'cosmos_real'
+  folder_name = 'sersic_hmc'
   job_name = str(int(time.time()))
   if not os.path.isdir('./res'):
     os.mkdir('res')
@@ -58,17 +61,19 @@ def main(_):
   os.mkdir("res/"+folder_name+"/{}".format(job_name))
   os.mkdir("res/"+folder_name+"/{}/params".format(job_name))
 
-  # Generate observations
-
   begin = time.time()
 
   num_gal = N*N
+  
+  if FLAGS.catalog=='25.2':
+    cat = galsim.COSMOSCatalog(sample='25.2',
+                               dir='/gpfswork/rech/xdy/commun/galsim_catalogs/COSMOS_25.2_training_sample')
+  elif FLAGS.catalog=='23.5':
+    cat = galsim.COSMOSCatalog(sample='23.5',
+                               dir='/gpfswork/rech/xdy/commun/galsim_catalogs/COSMOS_23.5_training_sample')
 
-  # Load galaxies from galsim COSMOS catalog
-  # cat = galsim.COSMOSCatalog(sample='23.5')
-  #cat = galsim.COSMOSCatalog(dir='/Users/br263581/miniconda3/envs/gems/lib/python3.6/site-packages/galsim/share/COSMOS_25.2_training_sample')
+  index = range(N*N)
 
-  cat = galsim.COSMOSCatalog()
   # Prepare parameters
   obs = []
   n = []
@@ -77,19 +82,27 @@ def main(_):
   q_list = []
   phi_list = []
   psfs = []
+
+  mag_auto_list = []
+  z_phot_list = []
+  flux_radius_list = []
+
   ind = 0
   ind_ = 0
 
   # PSF parameters
   im_scale = 0.03
-  interp_factor=1
+  interp_factor=1#2
   padding_factor=1
 
   while len(obs) < num_gal:
     galp = cat.makeGalaxy(ind, gal_type='parametric')
     if cat.param_cat['use_bulgefit'][cat.orig_index[ind]] == 0:
-      if galp.original.n < 0.4 or galp.original.half_light_radius > .3 or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 23.5:
+      #if galp.original.n < 0.4 or galp.original.half_light_radius > .3 or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 23.5:
+      #if galp.original.n < 0.4 or galp.original.half_light_radius > 7. or cat.param_cat['mag_auto'][cat.orig_index[ind]] > 22.8  or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 22 or ind==2020:
+      if galp.original.n < 0.4 or galp.original.half_light_radius > .3:
         ind += 1
+
       else:
         if False:#ind_==6 or ind_==93 or ind_==56 or ind_==55:
           ind+=1
@@ -109,13 +122,17 @@ def main(_):
           phi = cat.param_cat['sersicfit'][cat.orig_index[ind]][7]
           phi_list.append(phi)
           psfs.append(imkpsf)
+          
+          mag_auto_list.append(cat.param_cat['mag_auto'][cat.orig_index[ind]])
+          z_phot_list.append(cat.param_cat['zphot'][cat.orig_index[ind]])
+          flux_radius_list.append(cat.param_cat['flux_radius'][cat.orig_index[ind]])
 
           # Apply shear
-          galr = galr.shear(g1=0.05, g2=-0.05)
-          conv = galsim.Convolve(galr, psf)
-          
+          #galr = galr
+          conv = galsim.Convolve(galr.shear(g1=0.05, g2=-0.05), psf)
+
           # Add Gaussian noise
-          img = conv.drawImage(nx=stamp_size, ny=stamp_size, scale=im_scale, method='no_pixel')
+          img = conv.drawImage(nx=stamp_size, ny=stamp_size, scale=im_scale)
           seed = ind
           generator = galsim.random.BaseDeviate(seed=seed)
           g_noise = galsim.GaussianNoise(rng=generator, sigma=noise_level)
@@ -128,8 +145,11 @@ def main(_):
     else:
       ind += 1
 
-  obs_64 = tf.expand_dims(tf.stack(obs, axis=0), 0) # [1, batch, nx, ny]
-  obs = tf.expand_dims(tf.stack(obs, axis=0), 0)[..., 10:-10, 10:-10] # [1, batch, nx, ny]
+  #obs_64 = tf.expand_dims(tf.stack(obs, axis=0), 0) # [1, batch, nx, ny]
+  obs_64 = tf.convert_to_tensor(np.load('res/cosmos_parametric/1659970897/obs.npy'), tf.float32)
+
+  k = 10
+  obs = tf.expand_dims(tf.stack(obs, axis=0), 0)[..., k:-k, k:-k] # [1, batch, nx, ny]
   n = tf.expand_dims(tf.stack(n, axis=0), 0)
   flux = tf.expand_dims(tf.stack(flux, axis=0), 0)
   hlr = tf.expand_dims(tf.stack(hlr, axis=0), 0)
@@ -140,21 +160,38 @@ def main(_):
   imkpsfs = tf.concat(psfs, axis=0)
 
   # Ground truth parameters
+  true_hlr = hlr
   true_e = tf.stack([e1, e2], -1)
   true_gamma = tf.expand_dims(tf.convert_to_tensor([0.05, -0.05]), 0)
 
-  # Get the joint log prob
+  #TODO: does not work with batch size > 1 yet...
   batch_size = 1
 
-  log_prob = make_log_joint_fn(partial(sersic2morph_model, batch_size=batch_size, sigma_e=noise_level, num_gal=N*N, kpsf=imkpsfs, fixed_flux=True, n=n, flux=flux, hlr=hlr, fit_centroid=True))
+  log_prob = make_log_joint_fn(partial(sersic2morph_model, 
+                                      batch_size=batch_size, 
+                                      sigma_e=noise_level, 
+                                      stamp_size=stamp_size,
+                                      num_gal=N*N, 
+                                      kpsf=imkpsfs, 
+                                      interp_factor = interp_factor,
+                                      padding_factor = padding_factor,
+                                      #mag_auto_list=mag_auto_list, 
+                                      #z_phot_list=z_phot_list, 
+                                      #flux_radius_list=flux_radius_list,
+                                      fixed_flux=True, 
+                                      n=n,
+                                      flux=flux, 
+                                      #hlr=hlr,
+                                      fit_centroid=True))
 
-  scale_e = 1.
+  scale_hlr = .5
+  scale_e = .5
   scale_F = 1.
   scale_gamma = .1
   scale_shift = 1.
-  def target_log_prob_fn(gamma, e, shift):#, F):
+  def target_log_prob_fn(hlr, gamma, e, shift):#, F):
     return log_prob(
-           hlr=hlr,
+           hlr=hlr*scale_hlr,
            gamma=gamma*scale_gamma, # trick to adapt the step size
            e=e*scale_e,
            shift=shift*scale_shift,
@@ -168,58 +205,65 @@ def main(_):
     num_leapfrog_steps=3,
     # step_size=.00005)
     # step_size=.0001)
-    step_size=.002)
+    step_size=.005)
 
-  @tf.function
+
   def get_samples():
     samples, trace = tfp.mcmc.sample_chain(
         num_results=num_results,
         num_burnin_steps=num_burnin_steps,
         current_state=[
           # hlr, # init with prior mean
-                      # true_hlr,
+                      #true_hlr/scale_hlr,
+                      tf.math.log(true_hlr)/tf.math.log(10.)/scale_hlr,
                       # tf.zeros((1, 2)), # init with zero shear
                       # start_gamma,
-                      true_gamma/scale_gamma,
+                      true_gamma/scale_gamma*0.,
                       # tf.zeros((1, num_gal, 2)), # init with zero ellipticity
                       # start_e,
                       true_e,
-                      true_e*0., # offset shift init to 0.
+                      true_e*0.,
                       
         ],
         kernel=adaptive_hmc)
     return samples, trace
-  
+
   samples, trace = get_samples()
 
+  hlr_est = samples[0][:,0]*scale_hlr
+  gamma_est = samples[1][:,0,:]*scale_gamma
+  e_est = samples[2][:,0,:]*scale_e
+  shift_est = samples[3][:,0,:]*scale_shift
+  gamma_true = true_gamma[0,:]
+
+  with ed.interception(make_value_setter(hlr=tf.reduce_mean(hlr_est, axis=0, keepdims=True),
+      e=tf.reduce_mean(e_est, axis=0, keepdims=True),
+                                        gamma=tf.reduce_mean(gamma_est, axis=0, keepdims=True),
+                                        shift=tf.reduce_mean(shift_est, axis=0, keepdims=True),)):
+    rec1 = sersic2morph_model(batch_size=batch_size,
+                              stamp_size=stamp_size,
+                              sigma_e=0.,
+                              num_gal=N*N,
+                              kpsf=imkpsfs,
+                              interp_factor = interp_factor,
+                              padding_factor = padding_factor,
+                              fixed_flux=True,
+                              n=n, flux=flux,# hlr=hlr,
+                              fit_centroid=True, display=True)
+
+  with tf.Session() as sess:
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    e_est, gamma_est, trace, true_e, gamma_true, obs_64, shift_est, rec1, true_hlr, hlr_est= sess.run([e_est, gamma_est, trace, true_e, gamma_true, obs_64, shift_est, rec1, true_hlr, hlr_est])
+
+  #print(hlr_est.shape)
   end = time.time()
   print('Time: {:.2f}'.format((end - begin)/60.))
   print('')
-
-  # hlr_est = samples[0].numpy()[:,0,:]
-  gamma_est = samples[0][:,0,:]*scale_gamma
-  e_est = samples[1][:,0,:]*scale_e
-  shift_est = samples[2][:,0,:]*scale_shift
-  gamma_true = true_gamma[0,:]
-  
-  with ed.interception(make_value_setter(e=tf.reduce_mean(e_est, axis=0, keepdims=True),
-                                        gamma=tf.reduce_mean(gamma_est, axis=0, keepdims=True),
-                                        shift=tf.reduce_mean(shift_est, axis=0, keepdims=True),)):
-    rec1 = sersic2morph_model(batch_size=batch_size, 
-                              sigma_e=noise_level,
-                              num_gal=N*N, 
-                              kpsf=imkpsfs, 
-                              fixed_flux=True, 
-                              n=n, flux=flux, hlr=hlr, 
-                              fit_centroid=True, display=True)
-
-  
-  with tf.Session() as sess:
-    e_est, gamma_est, shift_est, trace, true_e, gamma_true, obs_64, rec1 = sess.run([e_est, gamma_est, shift_est, trace, true_e, gamma_true, obs_64, rec1])
-  
   print('accptance ratio:', trace.is_accepted.sum()/len(trace.is_accepted))
-  im_rec1 = rec1.reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
 
+  im_rec1 = rec1.reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
+    
   # Save results
   ## Save observations
   res = obs_64.reshape(N,N,stamp_size,stamp_size).transpose([0,2,1,3]).reshape([N*stamp_size,N*stamp_size])
@@ -229,30 +273,37 @@ def main(_):
   plt.imshow(np.arcsinh(res/s)*s)
   plt.savefig("res/"+folder_name+"/"+job_name+"/gals.png")
 
-  ## Save chains
-  np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_gamma_{}_{}.npy".format(N*N, num_results, gamma_true[0], gamma_true[1]), gamma_est)
-  np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_e.npy".format(N*N, num_results), e_est)
-  np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_shift.npy".format(N*N, num_results), shift_est)
+  np.save("res/"+folder_name+"/"+job_name+"/samples_gamma.npy", gamma_est)
+  np.save("res/"+folder_name+"/"+job_name+"/samples_e.npy", e_est)
+  # np.save("res/"+folder_name+"/"+job_name+"/samples{}_{}_r.npy".format(N*N, num_results), hlr_est)
 
-  ## Save chains plots
+
+  print(gamma_est.shape)
   plt.figure()
   plt.plot(gamma_est)
   plt.axhline(gamma_true[0], color='C0', label='g1')
   plt.axhline(gamma_true[1], color='C1', label='g2')
   plt.legend()
-  plt.savefig("res/"+folder_name+"/"+job_name+"/shear.png")
+  plt.savefig("res/"+folder_name+"/"+job_name+"/shear_flat_prior_{}.png".format(FLAGS.flat_p_e))
 
+
+  plt.figure()
+  plt.title('hlr')
+  for i in range(5):
+    plt.plot(hlr_est[:,i], label='{}'.format(i))
+    #plt.axhline(true_hlr[0,i], color='gray')
+    plt.axhline(np.log(true_hlr[0,i])/np.log(10.), color='gray')
+  plt.legend()
+  plt.savefig("res/"+folder_name+"/"+job_name+"/hlr.png")
+    
   plt.figure()
   plt.subplot(121)
   plt.title('e1')
   for i in range(5):
-    # print(true_e.numpy().shape)
-    # print(true_e.numpy()[0,i,0])
     plt.plot(e_est[:,i,0], label='{}'.format(i))
     plt.axhline(true_e[0,i,0], color='gray')
   plt.legend()
 
-  print(np.where((e_est[:,:,0]-true_e[:,:,0]) > 0.02))
 
   plt.subplot(122)
   plt.title('e2')
@@ -261,6 +312,7 @@ def main(_):
     plt.axhline(true_e[0,i,1], color='gray')
   plt.legend()
   plt.savefig("res/"+folder_name+"/"+job_name+"/e.png")
+  
 
   plt.figure()
   plt.title('offset x')
@@ -268,12 +320,13 @@ def main(_):
     plt.plot(shift_est[:,i,0], label='{}'.format(i))
   plt.legend()
   plt.savefig("res/"+folder_name+"/"+job_name+"/shift.png")
-  
+    
   ## Save fitted image
   plt.figure(figsize=(11,11))
   plt.title('Mean posterior (sersic2morph)')
   s = 1e-2
-  plt.imshow(np.arcsinh((im_rec1)/s)*s)
+  #plt.imshow(np.arcsinh((im_rec1)/s)*s)
+  plt.imshow(im_rec1, vmax=0.1)
   plt.colorbar()
   plt.savefig("res/"+folder_name+"/"+job_name+"/mean_posterior.png")
 
