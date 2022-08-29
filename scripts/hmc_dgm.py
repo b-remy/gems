@@ -29,7 +29,7 @@ _pi = np.pi
 stamp_size = 128
 noise_level = 0.01
 
-N=10
+N=20
 
 flags.DEFINE_integer("n", 10, "number of interations")
 flags.DEFINE_string("samples_path", None, "number of interations")
@@ -87,23 +87,25 @@ def main(_):
   flux_radius_list = []
 
   ind = 0
-  ind_ = 0
 
   # PSF parameters
   im_scale = 0.03
   interp_factor=1#2
   padding_factor=1
 
+  indices = []
+  degrees = galsim.AngleUnit(_pi / 180.)
+  angle = galsim.Angle(90, unit=degrees)
+
   while len(obs) < num_gal:
     galp = cat.makeGalaxy(ind, gal_type='parametric')
     if cat.param_cat['use_bulgefit'][cat.orig_index[ind]] == 0:
       #if galp.original.n < 0.4 or galp.original.half_light_radius > .5 or cat.param_cat['mag_auto'][cat.orig_index[ind]] > 22.5 or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 22. or ind==2020:
-      if galp.original.n < 0.4 or galp.original.half_light_radius > 7. or cat.param_cat['mag_auto'][cat.orig_index[ind]] > 22.8  or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 22 or ind==2020:
+      if galp.original.n < 0.4 or galp.original.half_light_radius > 7. or cat.param_cat['mag_auto'][cat.orig_index[ind]] > 23.5  or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 22 or ind==2020:
         ind += 1
       else:
         if False:#ind_==6 or ind_==93 or ind_==56 or ind_==55:
           ind+=1
-          ind_+=1
         else:
           galr = cat.makeGalaxy(ind, gal_type='real')
           galp = cat.makeGalaxy(ind, gal_type='parametric')
@@ -124,6 +126,9 @@ def main(_):
           z_phot_list.append(cat.param_cat['zphot'][cat.orig_index[ind]])
           flux_radius_list.append(cat.param_cat['flux_radius'][cat.orig_index[ind]])
 
+          if indices.count(ind)==1:
+            galr = galr.rotate(angle)
+
           # Apply shear
           g1 = 0.05
           g2 = -0.05
@@ -138,9 +143,13 @@ def main(_):
           img.addNoise(g_noise)
           obs_ = tf.convert_to_tensor(img.array)
           obs.append(obs_)
+
+          indices.append(ind)
           print(ind, len(obs))
-          ind_ += 1
-          ind += 1
+
+
+          if indices.count(ind)==2:
+            ind += 1
     else:
       ind += 1
 
