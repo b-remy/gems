@@ -29,7 +29,7 @@ _pi = np.pi
 stamp_size = 128
 noise_level = 0.01
 
-N = 10 # number of stamp in a row/col
+N = 12 # number of stamp in a row/col
 
 def gpsf2ikpsf(psf, interp_factor, padding_factor, stamp_size, im_scale):
   Nk = stamp_size*interp_factor*padding_factor
@@ -56,6 +56,7 @@ def main(_):
 
 
   num_gal = N*N
+  #cat = galsim.COSMOSCatalog(sample='23.5', dir='/gpfswork/rech/xdy/commun/galsim_catalogs/COSMOS_23.5_training_sample')
   cat = galsim.COSMOSCatalog(dir='/gpfswork/rech/xdy/commun/galsim_catalogs/COSMOS_25.2_training_sample')
   #cat = galsim.COSMOSCatalog(dir='/local/home/br263581/miniconda3/envs/gems/lib/python3.6/site-packages/galsim/share/COSMOS_25.2_training_sample')
   index = range(N*N)
@@ -78,13 +79,13 @@ def main(_):
 
   # PSF parameters
   im_scale = 0.03
-  interp_factor=2
+  interp_factor=1
   padding_factor=1
 
   while len(obs) < num_gal:
     galp = cat.makeGalaxy(ind, gal_type='parametric')
     if cat.param_cat['use_bulgefit'][cat.orig_index[ind]] == 0:
-      if galp.original.n < 0.4 or galp.original.half_light_radius > .3:
+      if galp.original.n < 0.4 or galp.original.half_light_radius > .5 or cat.param_cat['mag_auto'][cat.orig_index[ind]] > 22.5 or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 22. or ind==2020:
         ind += 1
       else:
         if False:#ind_==6 or ind_==93 or ind_==56 or ind_==55:
@@ -111,11 +112,11 @@ def main(_):
           flux_radius_list.append(cat.param_cat['flux_radius'][cat.orig_index[ind]])
 
           # Apply shear
-          galr.shear(g1=0.05, g2=-0.05)
+          galr = galr.shear(g1=0.05, g2=-0.05)
           conv = galsim.Convolve(galr, psf)
 
           # Add Gaussian noise
-          img = conv.drawImage(nx=stamp_size, ny=stamp_size, scale=im_scale, method='no_pixel')
+          img = conv.drawImage(nx=stamp_size, ny=stamp_size, scale=im_scale)
           seed = ind
           generator = galsim.random.BaseDeviate(seed=seed)
           g_noise = galsim.GaussianNoise(rng=generator, sigma=noise_level)
@@ -153,14 +154,14 @@ def main(_):
                                       stamp_size=stamp_size,
                                       num_gal=N*N, 
                                       kpsf=imkpsfs, 
-                                      interp_factor = 2,
-                                      padding_factor = 1,
+                                      interp_factor = interp_factor,
+                                      padding_factor = padding_factor,
                                       mag_auto_list=mag_auto_list, 
                                       z_phot_list=z_phot_list, 
                                       flux_radius_list=flux_radius_list,
                                       fit_centroid=False))
 
-  scale_gamma = 0.1
+  scale_gamma = 1.
 
   def target_log_prob_fn(prior_z, gamma):
     return log_prob(
@@ -188,7 +189,7 @@ def main(_):
   sess.run(init)
 
   losses = []
-  for i in tqdm(range(100)):
+  for i in tqdm(range(200)):
       _, l, lz_, g_ = sess.run([train, loss, lz, gamma])
       losses.append(l)
 
@@ -212,12 +213,12 @@ def main(_):
 
   with ed.interception(make_value_setter(prior_z=lz, gamma=gamma*scale_gamma)):
     res_fit = dgm2morph_model(batch_size=batch_size, 
-                                 sigma_e=noise_level, 
+                                 sigma_e=0.,#noise_level, 
                                  stamp_size=stamp_size,
                                  num_gal=N*N, 
                                  kpsf=imkpsfs, 
-                                 interp_factor = 2,
-                                 padding_factor = 1,
+                                 interp_factor = interp_factor,
+                                 padding_factor = padding_factor,
                                  mag_auto_list=mag_auto_list, 
                                  z_phot_list=z_phot_list, 
                                  flux_radius_list=flux_radius_list,
