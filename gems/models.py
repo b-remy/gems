@@ -369,12 +369,11 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
     hlr = tf.reshape(hlr, [-1])
 
   # prior on Sersic index n
-  
-    # log_l_n = ed.Normal(loc=.1*tf.ones((batch_size, num_gal)), scale=.39, name="n")
-    # n = tf.math.exp(log_l_n * _log10)
-  
+  if n is None: 
+    log_l_n = ed.Normal(loc=.1*tf.ones((batch_size, num_gal)), scale=.39, name="n")
+    n = tf.math.exp(log_l_n * _log10)
+  #else:
   n = tf.reshape(n, [-1])
-  # n = n
 
   # Flux
   # F = 16.693710205567005 * tf.ones((batch_size, num_gal))
@@ -493,7 +492,7 @@ def dgm2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e
 
   # Constant shear in the field
   if gamma is None:
-    gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.05, name="gamma")
+    gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.1, name="gamma")
 
   # Apply same shear on all images
   ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])
@@ -544,3 +543,4 @@ def dgm2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e
 
   # Returns likelihood
   return  ed.Normal(loc=profile, scale=sigma_e, name="obs")
+
