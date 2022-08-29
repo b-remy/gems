@@ -544,3 +544,132 @@ def dgm2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e
   # Returns likelihood
   return  ed.Normal(loc=profile, scale=sigma_e, name="obs")
 
+def dgm_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003, kpsf=None, fit_centroid=False, 
+                    mag_auto_list=None, z_phot_list=None, flux_radius_list=None,
+                    interp_factor=1, padding_factor=1,
+                    gamma=None, display=False):
+  
+  # stamp size
+  nx = ny = stamp_size
+
+  # Conditional parameters
+  # handle batch_size
+
+  mag_auto_g = tf.reshape(tf.convert_to_tensor(mag_auto_list), [1,-1])
+  z_phot_g = tf.reshape(tf.convert_to_tensor(z_phot_list), [1,-1])
+  flux_radius_g = tf.reshape(tf.convert_to_tensor(flux_radius_list), [1,-1])
+  mag_auto_g = tf.reshape(tf.repeat(mag_auto_g, repeats=batch_size, axis=0), [batch_size*num_gal,])
+  z_phot_g = tf.reshape(tf.repeat(z_phot_g, repeats=batch_size, axis=0), [batch_size*num_gal,])
+  flux_radius_g = tf.reshape(tf.repeat(flux_radius_g, repeats=batch_size, axis=0), [batch_size*num_gal,])
+
+  # Generate light profiles
+  prior_z = ed.Normal(loc=tf.zeros([batch_size, num_gal, 16]), scale=1, name="prior_z")
+  prior_z = tf.reshape(prior_z, [batch_size*num_gal, 16])
+  
+  z = code({'mag_auto':mag_auto_g, 
+            'flux_radius':flux_radius_g, 
+            'zphot':z_phot_g , 
+            'random_normal':prior_z})
+
+  ims = decoder(z)
+
+  # Constant shear in the field
+  if gamma is None:
+    gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.1, name="gamma")
+
+  # Apply same shear on all images
+  ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])
+  # ims = tf.transpose(ims, perm=[0, 2, 3, 1])
+  # ims = galflow.shear(ims, 
+  #                     gamma[:,0],
+  #                     gamma[:,1])
+
+  # ims = tf.transpose(ims, perm=[0, 3, 1, 2])
+  # ims = tf.reshape(ims, [batch_size*num_gal, nx, ny, 1])
+
+  im_sheared = shear_fourier(ims, gamma[:,0], gamma[:,1])
+
+  # if fit_centroid:
+  #   shift = ed.Normal(loc=tf.zeros((batch_size, num_gal,2)), scale=1., name="shift")
+  #   shift = shift + 0.
+  #   shift = tf.reshape(shift, [batch_size*num_gal,2])
+  #   shift_x = shift[:,0]
+  #   shift_y = shift[:,1]
+    
+  #   T = build_transform_matrix(shift_x, shift_y)
+
+  #   ims = perspective_transform(ims, T)
+
+  # Convolve the image with the PSF
+  interp_factor = interp_factor
+  padding_factor = padding_factor
+
+  # kpsf_shape = kpsf.shape
+  # kpsf = tf.repeat(tf.expand_dims(kpsf, 0), repeats=batch_size, axis=0)
+  # kpsf = tf.reshape(kpsf, [batch_size*kpsf_shape[0], kpsf_shape[1], kpsf_shape[2]])
+
+  # # handle batch_size
+  # profile = galflow.convolve(ims, kpsf,
+  #                     zero_padding_factor=padding_factor,
+  #                     interp_factor=interp_factor)[...,0]
+
+  profile = convolve_fourier(im_sheared, kpsf)
+
+  profile = tf.reshape(profile, [batch_size, num_gal, nx, ny])
+  if not display:
+    k = 10
+    profile = profile[...,k:-k, k:-k]
+  # print(profile.shape)
+
+  # Returns likelihood
+  return  ed.Normal(loc=profile, scale=sigma_e, name="obs")
+
+def shear_fourier(ims, g1, g2, interp_factor=1, stamp_size=128):
+  """
+  ims: [batch_size, num_gal, nx, ny]
+  g1: float32
+  g2: float32
+  """
+    
+  kx, ky = tf.meshgrid(tf.linspace(-0.5,0.5,interp_factor*(stamp_size)),
+                      tf.linspace(-0.5,0.5,interp_factor*stamp_size))
+  mask = tf.cast(tf.math.sqrt(kx**2 + ky**2) <= .5, dtype='complex64')
+  mask = tf.expand_dims(mask, axis=0)
+
+  batch_size, num_gal, nx, ny = ims.shape
+    
+  ims = tf.reshape(ims, [batch_size*num_gal, nx, ny])
+
+  im_shift = tf.signal.ifftshift(ims,axes=[1,2]) # The ifftshift is to remove the phase for centered objects
+  im_complex = tf.cast(im_shift, tf.complex64)
+  im_fft = tf.signal.fft2d(im_complex)
+  imk = tf.signal.fftshift(im_fft, axes=[1,2]) #the fftshift is to put the 0 frequency at the center of the k image
+
+  # Killling nasty frequencies that go out of the domain
+  imk = imk * mask
+
+  imk = tf.reshape(imk, [batch_size, num_gal, nx, ny])
+  imk = tf.transpose(imk, perm=[0, 2, 3, 1])
+
+  # Apply shear
+  im_sheared = galflow.shear(imk, g1*tf.ones((1,)), g2*tf.ones((1,)))
+
+  im_sheared = tf.transpose(im_sheared, perm=[0, 3, 1, 2])
+  im_sheared = tf.reshape(im_sheared, [batch_size, num_gal, nx, ny])
+  return im_sheared
+
+def convolve_fourier(imk, imkpsfs):
+  batch_size, num_gal, nx, ny = imk.shape
+
+  kpsf_shape = imkpsfs.shape
+  imkpsfs = tf.repeat(tf.expand_dims(imkpsfs, 0), repeats=batch_size, axis=0)
+  imkpsfs = tf.reshape(imkpsfs, [batch_size, kpsf_shape[0], kpsf_shape[1], kpsf_shape[2]])
+  
+  # Reconvolve with target PSF
+  im_reconv = tf.signal.ifft2d(tf.signal.ifftshift(imk * imkpsfs ))
+
+  # Compute inverse Fourier transform
+  imgf = tf.math.real(tf.signal.fftshift(im_reconv))
+
+  imgf = tf.reshape(imgf, [batch_size, num_gal, nx, ny])
+  return imgf
