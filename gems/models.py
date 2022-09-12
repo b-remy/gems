@@ -440,3 +440,159 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
 
   # Returns likelihood
   return  ed.Normal(loc=profile, scale=sigma_e, name="obs")
+
+def shear_fourier(ims, g1, g2, interp_factor=1, stamp_size=128):
+  """
+  ims: [batch_size, num_gal, nx, ny]
+  g1: float32
+  g2: float32
+  """
+    
+  kx, ky = tf.meshgrid(tf.linspace(-0.5,0.5,interp_factor*(stamp_size)),
+                      tf.linspace(-0.5,0.5,interp_factor*stamp_size))
+  mask = tf.cast(tf.math.sqrt(kx**2 + ky**2) <= .5, dtype='complex64')
+  mask = tf.expand_dims(mask, axis=0)
+
+  batch_size, num_gal, nx, ny = ims.shape
+    
+  ims = tf.reshape(ims, [batch_size*num_gal, nx, ny])
+
+  im_shift = tf.signal.ifftshift(ims,axes=[1,2]) # The ifftshift is to remove the phase for centered objects
+  im_complex = tf.cast(im_shift, tf.complex64)
+  im_fft = tf.signal.fft2d(im_complex)
+  imk = tf.signal.fftshift(im_fft, axes=[1,2]) #the fftshift is to put the 0 frequency at the center of the k image
+
+  # Killling nasty frequencies that go out of the domain
+  imk = imk * mask
+
+  imk = tf.reshape(imk, [batch_size, num_gal, nx, ny])
+  imk = tf.transpose(imk, perm=[0, 2, 3, 1])
+
+  # Apply shear
+  im_sheared = galflow.shear(imk, g1*tf.ones((1,)), g2*tf.ones((1,)))
+
+  im_sheared = tf.transpose(im_sheared, perm=[0, 3, 1, 2])
+  im_sheared = tf.reshape(im_sheared, [batch_size, num_gal, nx, ny])
+  return im_sheared
+
+def convolve_fourier(imk, imkpsfs):
+  batch_size, num_gal, nx, ny = imk.shape
+
+  kpsf_shape = imkpsfs.shape
+  imkpsfs = tf.repeat(tf.expand_dims(imkpsfs, 0), repeats=batch_size, axis=0)
+  imkpsfs = tf.reshape(imkpsfs, [batch_size, kpsf_shape[0], kpsf_shape[1], kpsf_shape[2]])
+  
+  # Reconvolve with target PSF
+  im_reconv = tf.signal.ifft2d(tf.signal.ifftshift(imk * imkpsfs ))
+
+  # Compute inverse Fourier transform
+  imgf = tf.math.real(tf.signal.fftshift(im_reconv))
+
+  imgf = tf.reshape(imgf, [batch_size, num_gal, nx, ny])
+  return imgf
+
+
+def sersic_model(batch_size=1, num_gal=25, stamp_size=128, scale=0.03, 
+                      sigma_e=0.003, fixed_flux=False, kpsf=None, fit_centroid=False,
+                      hlr=None, n=None, flux=None, e=None, gamma=None, display=False):
+  """PGM:
+  - Sersic light profiles
+  - Varying intrinsic ellipticity
+  - Constant shear
+  """
+  # stamp size
+  nx = ny = stamp_size
+  
+  # prior on Sersic size half light radius
+  if hlr is None:
+    log_l_hlr = ed.Normal(loc=-.68*tf.ones((batch_size, num_gal)), scale=.3, name="hlr")
+    hlr = tf.math.exp(log_l_hlr * _log10)
+  else:
+    hlr = tf.reshape(hlr, [-1])
+
+  # prior on Sersic index n
+  if n is None:
+    log_l_n = ed.Normal(loc=.1*tf.ones((batch_size, num_gal)), scale=.39, name="n")
+    n = tf.math.exp(log_l_n * _log10)
+  #else:
+  n = tf.reshape(n, [-1])
+
+  # Flux
+  # F = 16.693710205567005 * tf.ones((batch_size, num_gal))
+  # F = tf.reshape(F, [-1])
+  if fixed_flux:
+    F = flux
+  else:
+    F = ed.Uniform(0.*tf.ones((batch_size, num_gal)), 50.*tf.ones((batch_size, num_gal)), name="F")
+  F = tf.reshape(F, [-1])
+
+  # Generate light profile
+  profile = lp.sersic(n=n, half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=scale)
+
+  # prior on intrinsic galaxy ellipticity
+  if e is None:
+    e = ed.Normal(loc=tf.zeros((batch_size, num_gal, 2)), scale=.2, name="e")
+    e = e + 0. # fixes evalutation with tf.Variable()
+  e = tf.reshape(e, [batch_size*num_gal, 2])
+
+  # print('e', e)
+
+  # Apply intrinsic ellipticity on profiles the image
+  ims = tf.expand_dims(profile, -1)
+  ims = galflow.shear(ims, e[:,0], e[:,1])
+
+  # Constant shear in the field
+  if gamma is None:
+    gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.05, name="gamma")
+
+  # Apply same shear on all images
+  ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])
+  ims = tf.transpose(ims, perm=[0, 2, 3, 1])
+  
+  # ims = galflow.shear(ims, 
+  #                     gamma[:,0],
+  #                     gamma[:,1])
+
+  ims = tf.transpose(ims, perm=[0, 3, 1, 2])
+  ims = tf.reshape(ims, [batch_size*num_gal, nx, ny, 1])
+
+  # Shift centroid
+  # if (shift_x is None) or (shift_y is None):
+  #   shift_x = tf.zeros(batch_size*num_gal,)
+  #   shift_y = tf.zeros(batch_size*num_gal,)
+
+  if fit_centroid:
+    shift = ed.Normal(loc=tf.zeros((batch_size, num_gal,2)), scale=5., name="shift")
+    shift = shift + 0.
+    shift = tf.reshape(shift, [batch_size*num_gal,2])
+    shift_x = shift[:,0]
+    shift_y = shift[:,1]
+    
+    T = build_transform_matrix(shift_x, shift_y)
+
+    ims = perspective_transform(ims, T)
+
+  ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])
+
+
+  im_sheared = shear_fourier(ims, gamma[:,0], gamma[:,1])
+
+  # Convolve the image with the PSF
+  # interp_factor = 1
+  # padding_factor = 1
+  # kpsf = get_gaussian_psf(scale, stamp_size, interp_factor, padding_factor)
+  # kpsf = get_cosmos_psf(stamp_size, scale)
+
+  profile = convolve_fourier(im_sheared, kpsf)
+
+  # profile = galflow.convolve(ims, kpsf,
+  #                     zero_padding_factor=padding_factor,
+  #                     interp_factor=interp_factor)[...,0]
+
+  profile = tf.reshape(profile, [batch_size, num_gal, nx, ny])
+  if not display:
+    profile = profile[...,10:-10, 10:-10]
+  # print(profile.shape)
+
+  # Returns likelihood
+  return  ed.Normal(loc=profile, scale=sigma_e, name="obs")
