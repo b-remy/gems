@@ -20,7 +20,8 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from tensorflow_probability.python.bijectors import bijector
+# from tensorflow_probability.python.bijectors import bijector
+import gems.flows.bijector as bijector
 from tensorflow_probability.python.internal import tensorshape_util
 
 
@@ -179,6 +180,7 @@ class RealNVP(bijector.Bijector):
             "Number of masked units must be smaller than the event size.")
 
   def _forward(self, x, **condition_kwargs):
+    # print(condition_kwargs)
     self._cache_input_depth(x)
     # Performs scale and shift.
     x0, x1 = x[..., :self._num_masked], x[..., self._num_masked:]
@@ -274,12 +276,18 @@ def real_nvp_default_template(hidden_layers,
   with tf.compat.v2.name_scope(name or "real_nvp_default_template"):
 
     def _fn(x, output_units, **condition_kwargs):
-      """Fully connected MLP parameterized via `real_nvp_template`."""
+      """Fully connected MLP parameterized via `real_nvp_template`.
+      x is the sample from the distribution [batch_size, N_objects, d]
+      y is the cosmic shear used to condition the realNVP [batch_size, 2]
+      """
+      # print(condition_kwargs)
       if condition_kwargs:
-        raise NotImplementedError(
-            'Conditioning not implemented in the default template.')
+        y = condition_kwargs['condition']
+        # print(y)
+        # raise NotImplementedError(
+        #     'Conditioning not implemented in the default template.')
 
-      print('x.shape', x.shape)
+      # print('x.shape', x.shape)
 
       if tensorshape_util.rank(x.shape) == 2:
         x = x[tf.newaxis, ...]
@@ -289,9 +297,13 @@ def real_nvp_default_template(hidden_layers,
       else:
         reshape_output = lambda x: x
       
+
       batch_size = x.shape[0]
       N_objects = x.shape[1]
+      d = x.shape[2]
       
+      y = tf.reshape(y, [batch_size, 2])
+
       # here we want a NN per batch dimension
       shifts = tf.zeros([batch_size, 1, output_units])
       log_scales = tf.zeros([batch_size, 1, output_units])
@@ -299,7 +311,8 @@ def real_nvp_default_template(hidden_layers,
       # shift and scales will be applied on the output_units dims
       for i in range(N_objects):
         x_ = x[:, i, ...]
-        
+        x_ = tf.concat([x_, y], axis=-1)
+
         for units in hidden_layers:
           x_ = tf.compat.v1.layers.dense(
               inputs=x_,
