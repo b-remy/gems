@@ -269,11 +269,7 @@ class Chain(bijector.Bijector):
 
   def _forward(self, x, **kwargs):
     for b in reversed(self.bijectors):
-      # print(kwargs)
-      # print(kwargs.get(b.name, {}))
       # x = b.forward(x, **kwargs.get(b.name, {}))
-      print(b)
-      print('in chain.py', kwargs)
       x = b.forward(x, **kwargs)
     return x
 
@@ -311,8 +307,6 @@ class Chain(bijector.Bijector):
           event_ndims = event_ndims_
           event_shape = event_shape_
 
-      # print(kwargs)
-      # print(kwargs.get(b.name, {}))
       # x = b.forward(x, **kwargs.get(b.name, {}))
       x = b.forward(x, **kwargs)
     return fldj
