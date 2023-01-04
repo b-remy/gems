@@ -274,15 +274,13 @@ def real_nvp_default_template(hidden_layers,
   """
 
   with tf.compat.v2.name_scope(name or "real_nvp_default_template"):
-
+    print(name)
     def _fn(x, output_units, **condition_kwargs):
       """Fully connected MLP parameterized via `real_nvp_template`.
       x is the sample from the distribution [batch_size, N_objects, d]
       y is the cosmic shear used to condition the realNVP [batch_size, 2]
       """
       # print(condition_kwargs)
-      if condition_kwargs:
-        y = condition_kwargs['condition']
         # print(y)
         # raise NotImplementedError(
         #     'Conditioning not implemented in the default template.')
@@ -292,8 +290,11 @@ def real_nvp_default_template(hidden_layers,
       if tensorshape_util.rank(x.shape) == 2:
         x = x[tf.newaxis, ...]
         # reshape_output = lambda x: x[:,0]
-        raise ValueError(
-          'batch_size must be specified in `nvp.sample(batch_size)`')
+        # raise ValueError(
+        #   'batch_size must be specified in `nvp.sample(batch_size)`')
+        # tf.expand_dims()
+        x = x[tf.newaxis, ...]
+        reshape_output = lambda x: x
       else:
         reshape_output = lambda x: x
       
@@ -302,6 +303,14 @@ def real_nvp_default_template(hidden_layers,
       N_objects = x.shape[1]
       d = x.shape[2]
       
+      if condition_kwargs:
+        # print(condition_kwargs['condition'])
+        # print(condition_kwargs.keys())
+        # print(condition_kwargs.values())
+        y = condition_kwargs['condition']
+      else:
+        y = tf.zeros([batch_size, 2])
+
       y = tf.reshape(y, [batch_size, 2])
 
       # here we want a NN per batch dimension

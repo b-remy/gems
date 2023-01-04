@@ -367,13 +367,16 @@ class TransformedDistribution(distribution_lib.Distribution):
     # the result of `self.bijector.forward` is not modified (and thus caching
     # works).
     with self._name_scope(name):
+      print('sample_shape', sample_shape)
       sample_shape = tf.convert_to_tensor(
           value=sample_shape, dtype=tf.int32, name="sample_shape")
       sample_shape, n = self._expand_sample_shape_to_vector(
           sample_shape, "sample_shape")
 
       distribution_kwargs, bijector_kwargs = self._kwargs_split_fn(kwargs)
-      bijector_kwargs["condition"] = kwargs["condition"]
+      # print(distribution_kwargs, bijector_kwargs)
+      # print(bijector_kwargs["condition"])
+      # bijector_kwargs["condition"] = kwargs["condition"]
       # First, generate samples. We will possibly generate extra samples in the
       # event that we need to reinterpret the samples as part of the
       # event_shape.
@@ -389,6 +392,7 @@ class TransformedDistribution(distribution_lib.Distribution):
       # work, it is imperative that this is the last modification to the
       # returned result.
       # print(bijector_kwargs)
+      print('into transform_distribution', x.shape)
       y = self.bijector.forward(x, **bijector_kwargs)
       y = self._set_sample_static_shape(y, sample_shape)
 
@@ -396,7 +400,7 @@ class TransformedDistribution(distribution_lib.Distribution):
 
   def _log_prob(self, y, **kwargs):
     distribution_kwargs, bijector_kwargs = self._kwargs_split_fn(kwargs)
-    bijector_kwargs["condition"] = kwargs["condition"]
+    # bijector_kwargs["condition"] = kwargs["condition"]
     # For caching to work, it is imperative that the bijector is the first to
     # modify the input.
     x = self.bijector.inverse(y, **bijector_kwargs)
@@ -548,6 +552,7 @@ class TransformedDistribution(distribution_lib.Distribution):
            self.event_shape_tensor()], 0)
       x = tf.broadcast_to(x, new_shape)
 
+    print(x.shape)
     y = self.bijector.forward(x, **bijector_kwargs)
 
     sample_shape = tf.convert_to_tensor(
