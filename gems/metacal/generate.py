@@ -39,7 +39,7 @@ def gpsf2ikpsf(psf, interp_factor, padding_factor, stamp_size, im_scale):
   imkpsf = imkpsf.array.reshape([1, Nk, Nk])
   return imkpsf
 
-def gen_batch(batch_size=2, start_index=0, shear=[0., 0.], noise_level=0.01):
+def gen_batch(batch_size=2, shear=[0., 0.], noise_level=0.01, start_ind=0):
   """
   Util funnction generating batch of autoencoded 
   batch_size: must be a pair intege (every galaxy is doubled to cancel intrinsic shear)
@@ -62,14 +62,14 @@ def gen_batch(batch_size=2, start_index=0, shear=[0., 0.], noise_level=0.01):
   degrees = galsim.AngleUnit(np.pi / 180.)
   angle = galsim.Angle(90, unit=degrees)
 
-  ind = start_index
+  ind = start_ind
 
   while len(im_real_list) < NUM_GAL:
     galp = cat.makeGalaxy(ind, gal_type='parametric')
     if cat.param_cat['use_bulgefit'][cat.orig_index[ind]] == 0:
       
       # CUTS
-      if galp.original.n < 0.4 or galp.original.half_light_radius > .2 or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 23.5 or ind < start_index:
+      if galp.original.n < 0.4 or galp.original.half_light_radius > .2 or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 23.5:
         ind += 1
       else:
         galp = cat.makeGalaxy(ind, gal_type='parametric')
@@ -104,7 +104,7 @@ def gen_batch(batch_size=2, start_index=0, shear=[0., 0.], noise_level=0.01):
         z_phot_list.append(cat.param_cat['zphot'][cat.orig_index[ind]])
         flux_radius_list.append(cat.param_cat['flux_radius'][cat.orig_index[ind]])
 
-        print(ind, len(im_real_list))
+        # print(ind, len(im_real_list))
 
         if indices.count(ind)==2:
           ind += 1
@@ -137,13 +137,13 @@ def gen_batch(batch_size=2, start_index=0, shear=[0., 0.], noise_level=0.01):
   
   y = sess.run(obs, feed_dict={psf_in:im_psf_list.reshape((NUM_GAL,256,129,1)), im_in:im_real_list.reshape((NUM_GAL,128,128,1))})
 
-  return y[0], psfs_ngmix
+  return y[0], psfs_ngmix, ind + 1
 
 
 if __name__=="__main__":
   N = 4
   batch_size = N*N
-  y = gen_batch(batch_size=batch_size, start_index=0, shear=[0.01, 0.], noise_level=0.01)
+  y = gen_batch(batch_size=batch_size, last_ind=0, shear=[0.01, 0.], noise_level=0.01)
 
   print(y.shape)
 

@@ -43,7 +43,7 @@ recovered shear is unbiased.  The printout should look something like this
 """
 import numpy as np
 import ngmix
-import galsim
+from tqdm import tqdm
 
 from gems.metacal.generate import gen_batch
 
@@ -78,13 +78,14 @@ def main():
 
     dlist = []
 
-    for i in progress(args.ntrial, miniters=10):
+    last_ind = 0
+    for _ in tqdm(range(args.ntrial)):
         # Generate observartions by batch
         batch_size = 4**2
-        gals, psfs = gen_batch(batch_size=batch_size, 
-                                start_index=(i+1)*batch_size, 
+        gals, psfs, last_ind = gen_batch(batch_size=batch_size, 
                                 shear=shear_true, 
-                                noise_level=args.noise)
+                                noise_level=args.noise,
+                                start_ind=last_ind)
 
         for j in range(batch_size):
             gal_im = gals[j]
