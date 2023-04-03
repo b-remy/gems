@@ -68,8 +68,31 @@ hlr_ = []
 flux_ = []
 jac_ = []
 
+obs = np.load("results/obs/obs_0_2221.npy")
+obs = np.concatenate([obs, np.load("results/obs/obs_2222_4430.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_4431_6699.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_6700_8952.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_8953_11222.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_11223_13398.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_13399_15701.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_15702_17944.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_17945_20318.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_20319_22628.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_22629_24908.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_24909_27237.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_24909_27237.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_27238_29436.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_29437_31652.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_31653_33860.npy")],1)
+obs = np.concatenate([obs, np.load("results/obs/obs_33861_36084.npy")],1)
+
+NUM_GAL = obs.shape[1]
+print(obs.shape)
+
+# assert 1==2
+
 ind = 0
-while len(im_real_list) < NUM_GAL:
+while len(indices) < NUM_GAL:
   galp = cat.makeGalaxy(ind, gal_type='parametric')
   if cat.param_cat['use_bulgefit'][cat.orig_index[ind]] == 0:
     if galp.original.n < .4 or galp.original.half_light_radius > 3. or cat.param_cat['mag_auto'][cat.orig_index[ind]] < 22.5:
@@ -81,55 +104,50 @@ while len(im_real_list) < NUM_GAL:
       psf = galr.original_psf
         
       psf_gauss = galsim.Gaussian(flux=1.0, fwhm=0.1)
-    
-      #galr = galp
 
       if indices.count(ind)==1:
         galr = galr.rotate(angle)
         galp = galp.rotate(angle)
         psf = psf.rotate(angle)
         psf_gauss = psf_gauss.rotate(angle)
-      #real = galsim.Convolve(psf, galr)
 
-      # assert galsim.Transformation(galr.original, jac=galr.jac) == galr
-      hlr_.append(galp.original.half_light_radius)
-      flux_.append(galp.original.flux)
-      jac_.append(galp.jac)
+      # hlr_.append(galp.original.half_light_radius)
+      # flux_.append(galp.original.flux)
+      # jac_.append(galp.jac)
     
-      gauss = galsim.Gaussian(half_light_radius=galp.original.half_light_radius, flux=galp.original.flux)
-      gauss = galsim.Transformation(gauss, galp.jac)
+      # gauss = galsim.Gaussian(half_light_radius=galp.original.half_light_radius, flux=galp.original.flux)
+      # gauss = galsim.Transformation(gauss, galp.jac)
 
-      im_gauss_list.append(gauss.drawImage(nx=128, ny=128, scale=PIXEL_SCALE).array)
+      # im_gauss_list.append(gauss.drawImage(nx=128, ny=128, scale=PIXEL_SCALE).array)
 
-      gauss_.append(gauss)
-      psf_gauss_.append(psf_gauss)
+      # gauss_.append(gauss)
+      # psf_gauss_.append(psf_gauss)
     
-      lp_.append(galr)
+      # lp_.append(galr)
       psf_.append(psf)
       
-      real = galsim.Convolve(galr, psf)
-      #real.drawImage(im_real)
-      real.drawImage(im_real, method='no_pixel', use_true_center=False)
+      # real = galsim.Convolve(galr, psf)
+      # real.drawImage(im_real, method='no_pixel', use_true_center=False)
 
       # PSF for the autocoder
-      imCp = psf.drawKImage(bounds=bounds,
-                              scale=2.*np.pi/(Nk * PIXEL_SCALE / interp_factor),
-                              recenter=False)
-      im_psf = np.abs(np.fft.fftshift(imCp.array, axes=0)).astype('float32')
+      # imCp = psf.drawKImage(bounds=bounds,
+      #                         scale=2.*np.pi/(Nk * PIXEL_SCALE / interp_factor),
+      #                         recenter=False)
+      # im_psf = np.abs(np.fft.fftshift(imCp.array, axes=0)).astype('float32')
 
       # PSF for reconvolution
-      imkpsf = gpsf2ikpsf(psf=psf, interp_factor=1, padding_factor=1, stamp_size=STAMP_SIZE, im_scale=PIXEL_SCALE)
-      psfs.append(imkpsf)
+      # imkpsf = gpsf2ikpsf(psf=psf, interp_factor=1, padding_factor=1, stamp_size=STAMP_SIZE, im_scale=PIXEL_SCALE)
+      # psfs.append(imkpsf)
       
-      imkps_gauss = gpsf2ikpsf(psf=psf_gauss, interp_factor=1, padding_factor=1, stamp_size=STAMP_SIZE, im_scale=PIXEL_SCALE)
-      psfs_gauss.append(imkps_gauss)
+      # imkps_gauss = gpsf2ikpsf(psf=psf_gauss, interp_factor=1, padding_factor=1, stamp_size=STAMP_SIZE, im_scale=PIXEL_SCALE)
+      # psfs_gauss.append(imkps_gauss)
     
-      psfs_im.append(psf.drawImage(scale=PIXEL_SCALE)) # 'no_pixel'
+      # psfs_im.append(psf.drawImage(scale=PIXEL_SCALE)) # 'no_pixel'
 
     
-      im_list.append(im_real)
-      im_real_list.append(im_real.array)
-      im_psf_list.append(im_psf)
+      # im_list.append(im_real)
+      # im_real_list.append(im_real.array)
+      # im_psf_list.append(im_psf)
       indices.append(ind)
 
       mag_auto_list.append(cat.param_cat['mag_auto'][cat.orig_index[ind]])
@@ -140,34 +158,33 @@ while len(im_real_list) < NUM_GAL:
 
       if indices.count(ind)==2:
         ind += 1
-      # ind += 1
 
   else:
     ind += 1
 
 # Load the AutoEncoder
-encoder = hub.Module('../deep_galaxy_models/modules/vae_16/encoder')
-decoder = hub.Module('../deep_galaxy_models/modules/vae_16/decoder')
+# encoder = hub.Module('../deep_galaxy_models/modules/vae_16/encoder')
+# decoder = hub.Module('../deep_galaxy_models/modules/vae_16/decoder')
 
-im_real_list = np.stack(im_real_list, axis=0)
-im_gauss_list = np.stack(im_gauss_list, axis=0)
-im_psf_list = np.stack(im_psf_list, axis=0)
-imkpsfs = tf.cast(tf.concat(psfs, axis=0), tf.complex64)
-imkpsfs_gauss = tf.cast(tf.concat(psfs_gauss, axis=0), tf.complex64)
+# im_real_list = np.stack(im_real_list, axis=0)
+# im_gauss_list = np.stack(im_gauss_list, axis=0)
+# im_psf_list = np.stack(im_psf_list, axis=0)
+# imkpsfs = tf.cast(tf.concat(psfs, axis=0), tf.complex64)
+# imkpsfs_gauss = tf.cast(tf.concat(psfs_gauss, axis=0), tf.complex64)
 
-psf_in = tf.placeholder(shape=[NUM_GAL, 256, 129, 1], dtype=tf.float32)
-im_in = tf.placeholder(shape=[NUM_GAL, 128, 128, 1], dtype=tf.float32)
+# psf_in = tf.placeholder(shape=[NUM_GAL, 256, 129, 1], dtype=tf.float32)
+# im_in = tf.placeholder(shape=[NUM_GAL, 128, 128, 1], dtype=tf.float32)
 
-code = encoder({'input':im_in, 'psf':psf_in})
-reconstruction = decoder(code)
+# code = encoder({'input':im_in, 'psf':psf_in})
+# reconstruction = decoder(code)
 
 g1 = -0.03
 g2 = +0.03
 
 # COSMOS galaxy & COSMOS PSF
-ims = tf.reshape(reconstruction, (1, NUM_GAL, STAMP_SIZE, STAMP_SIZE))
-im_sheared = shear_fourier(ims, g1, g2)
-ims = convolve_fourier(im_sheared, imkpsfs)
+# ims = tf.reshape(reconstruction, (1, NUM_GAL, STAMP_SIZE, STAMP_SIZE))
+# im_sheared = shear_fourier(ims, g1, g2)
+# ims = convolve_fourier(im_sheared, imkpsfs)
 
 """
 # COSMOS galaxy & Gaussian PSF
@@ -186,20 +203,25 @@ ims_gauss_sheared = shear_fourier(ims_gauss, g1, g2)
 ims_gauss_CPSF = convolve_fourier(ims_gauss_sheared, imkpsfs)
 """
 
-sess = tf.Session()
-sess.run(tf.global_variables_initializer())
 
-y = sess.run(ims, feed_dict={psf_in:im_psf_list.reshape((NUM_GAL,256,129,1)), im_in:im_real_list.reshape((NUM_GAL,128,128,1))})
+
+# sess = tf.Session()
+# sess.run(tf.global_variables_initializer())
+
+# y = sess.run(ims, feed_dict={psf_in:im_psf_list.reshape((NUM_GAL,256,129,1)), im_in:im_real_list.reshape((NUM_GAL,128,128,1))})
+
+"""
 # y, y_GPSF = sess.run([ims, ims_GPSF], feed_dict={psf_in:im_psf_list.reshape((NUM_GAL,256,129,1)), im_in:im_real_list.reshape((NUM_GAL,128,128,1))})
 # y_gauss, y_gauss_CPSF = sess.run([ims_gauss_, ims_gauss_CPSF])
-
+"""
 
 # Add Gaussian noise on images
-y = y + np.random.normal(size=y.shape) * noise_level
+# y = y + np.random.normal(size=y.shape) * noise_level
+"""
 # y_gauss = y_gauss + np.random.normal(size=y.shape) * noise_level
 # y_gauss_CPSF = y_gauss_CPSF + np.random.normal(size=y.shape) * noise_level
 # y_GPSF = y_GPSF + np.random.normal(size=y.shape) * noise_level
-
+"""
 
 def calibrate_hsm(e1, e2):
     e1 = np.stack(e1,0)
@@ -323,11 +345,14 @@ plt.title('COSMOS galaxy & Gaussian PSF ({})'.format(e1.shape[0]))
 """
 
 ## COSMOS galaxy and COSMOS PSF
+print("Starting processing {} galaxies with HSM...".format(NUM_GAL))
+
 n_fail = 0
 corr_e1 = []
 corr_e2 = []
 
-for i in tqdm(range(N*N)):
+y = obs
+for i in range(NUM_GAL):
     psf = psf_[i]
     
     final_image = galsim.Image(y[0,i], scale=PIXEL_SCALE)
@@ -351,5 +376,5 @@ plt.legend()
 plt.xlim([-0.1, 0.1])
 plt.ylim([-0.1, 0.1])
 plt.title('COSMOS galaxy and COSMOS PSF  ({})'.format(e1.shape[0]))
-plt.savefig('HSM.png')
+plt.savefig('HSM_{}.png'.format(NUM_GAL))
 plt.show()
