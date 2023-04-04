@@ -39,9 +39,9 @@ def gpsf2ikpsf(psf, interp_factor, padding_factor, stamp_size, im_scale):
   imkpsf = imkpsf.array.reshape([1, Nk, Nk])
   return imkpsf
 
-N = 75
+# N = 75
 
-NUM_GAL = N*N
+# NUM_GAL = N*N
 
 gauss_ = []
 psf_gauss_ = []
@@ -361,11 +361,34 @@ for i in range(NUM_GAL):
     result = galsim.hsm.EstimateShear(final_image, final_epsf_image, sky_var=noise_level, shear_est='REGAUSS', strict=False)
     
     if result.error_message != "":
-        print("fail, %d"%i)
+        # print("fail, %d"%i)
         n_fail += 1
     else:
         corr_e1.append(result.corrected_e1)
         corr_e2.append(result.corrected_e2)
+    
+    if i%1000 == 0:
+      e1, e2 = calibrate_hsm(corr_e1, corr_e2)      
+
+      m1 = e1.mean()/g1 - 1
+      merr1 = e1.std()/np.sqrt(e1.shape[0]) / g1
+      m2 = e2.mean()/g2 - 1
+      merr2 = e2.std()/np.sqrt(e2.shape[0]) / g2
+
+      print("{} galaxies".format(i))
+      # print("m1 = {} +/- {}".format(m1, abs(merr1)))
+      # print("m2 = {} +/- {}".format(m2, abs(merr2)))
+
+      if 2*abs(merr1) < abs(m1) and 2*abs(merr2) < abs(m2):
+        print("2 sigma bias identified from about {} galaxies".format(i))
+        print("m1 = {} +/- {}".format(m1, 2*abs(merr1)))
+        print("m2 = {} +/- {}".format(m2, 2*abs(merr2)))
+
+      if 3*abs(merr1) < abs(m1) and 3*abs(merr2) < abs(m2):
+        print("3 sigma bias identified from about {} galaxies".format(i))
+        print("m1 = {} +/- {}".format(m1, 3*abs(merr1)))
+        print("m2 = {} +/- {}".format(m2, 3*abs(merr2)))
+
 
 e1, e2 = calibrate_hsm(corr_e1, corr_e2)
 
@@ -376,5 +399,5 @@ plt.legend()
 plt.xlim([-0.1, 0.1])
 plt.ylim([-0.1, 0.1])
 plt.title('COSMOS galaxy and COSMOS PSF  ({})'.format(e1.shape[0]))
-plt.savefig('HSM_{}.png'.format(NUM_GAL))
+# plt.savefig('HSM_{}.png'.format(NUM_GAL))
 plt.show()
