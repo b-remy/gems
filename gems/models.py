@@ -617,7 +617,7 @@ def dgm_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003
 
   profile = tf.reshape(profile, [batch_size, num_gal, nx, ny])
   if not display:
-    k = 20
+    k = 10
     profile = profile[...,k:-k, k:-k]
   # print(profile.shape)
 
