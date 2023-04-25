@@ -274,7 +274,7 @@ def real_nvp_default_template(hidden_layers,
   """
 
   with tf.compat.v2.name_scope(name or "real_nvp_default_template"):
-    print(name)
+    #print(name)
     def _fn(x, output_units, **condition_kwargs):
       """Fully connected MLP parameterized via `real_nvp_template`.
       x is the sample from the distribution [batch_size, N_objects, d]
@@ -316,7 +316,7 @@ def real_nvp_default_template(hidden_layers,
       # here we want a NN per batch dimension
       shifts = tf.zeros([batch_size, 1, output_units])
       log_scales = tf.zeros([batch_size, 1, output_units])
-
+    
       # shift and scales will be applied on the output_units dims
       for i in range(N_objects):
         x_ = x[:, i, ...]
