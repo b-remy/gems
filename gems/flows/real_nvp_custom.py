@@ -287,7 +287,7 @@ def real_nvp_default_template(hidden_layers,
 
       # print('x.shape', x.shape)
 
-      if tensorshape_util.rank(x.shape) == 2:
+      if tensorshape_util.rank(x.shape) == 1:
         x = x[tf.newaxis, ...]
         # reshape_output = lambda x: x[:,0]
         # raise ValueError(
@@ -300,8 +300,8 @@ def real_nvp_default_template(hidden_layers,
       
 
       batch_size = x.shape[0]
-      N_objects = x.shape[1]
-      d = x.shape[2]
+      #N_objects = x.shape[1]
+      d = x.shape[1]
       
       if condition_kwargs:
         # print(condition_kwargs['condition'])
@@ -314,35 +314,36 @@ def real_nvp_default_template(hidden_layers,
       y = tf.reshape(y, [batch_size, 2])
 
       # here we want a NN per batch dimension
-      shifts = tf.zeros([batch_size, 1, output_units])
-      log_scales = tf.zeros([batch_size, 1, output_units])
+      #shifts = tf.zeros([batch_size, output_units])
+      #log_scales = tf.zeros([batch_size, output_units])
     
       # shift and scales will be applied on the output_units dims
-      for i in range(N_objects):
-        x_ = x[:, i, ...]
-        x_ = tf.concat([x_, y], axis=-1)
+      #for i in range(N_objects):
+      x_ = x[:, ...]
+      x_ = tf.concat([x_, y], axis=-1)
 
-        for units in hidden_layers:
-          x_ = tf.compat.v1.layers.dense(
+      for units in hidden_layers:
+        x_ = tf.compat.v1.layers.dense(
               inputs=x_,
               units=units,
               activation=activation,
               *args,  # pylint: disable=keyword-arg-before-vararg
               **kwargs)
-        x_ = tf.compat.v1.layers.dense(
+      x_ = tf.compat.v1.layers.dense(
             inputs=x_,
             units=(1 if shift_only else 2) * output_units,
             activation=None,
             *args,  # pylint: disable=keyword-arg-before-vararg
             **kwargs)
-        if shift_only:
-          return reshape_output(x), None
-        
-        shift, log_scale = tf.split(x_, 2, axis=-1)
-        
-        shifts = tf.concat([shifts, shift[:,tf.newaxis,:]], axis=1)
-        log_scales = tf.concat([log_scales, log_scale[:,tf.newaxis,:]], axis=1)
+      if shift_only:
+        return reshape_output(x), None
+
+      shift, log_scale = tf.split(x_, 2, axis=-1)
+
+      #shifts = tf.concat([shifts, shift[:,:]], axis=1)
+      #log_scales = tf.concat([log_scales, log_scale[:,:]], axis=1)
+      return shift, log_scale
       
-      return shifts[:, 1:, :], log_scales[:, 1:, :]
+      #return shifts[:, :], log_scales[:, :]
 
     return tf.compat.v1.make_template("real_nvp_default_template", _fn)
