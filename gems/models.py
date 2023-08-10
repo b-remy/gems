@@ -347,6 +347,8 @@ def build_transform_matrix(x, y):
 
   return tf.stack([xx, yy, zz],axis=1)
 
+from gems.flows.sigmoid import Sigmoid, Shift, Scale
+
 def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003, fixed_flux=False, kpsf=None, 
                       flat_prior_e=False,
                       fit_centroid=False,#shift_x=None, shift_y=None,
@@ -396,6 +398,8 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
       e = ed.Normal(loc=tf.zeros((batch_size, num_gal, 2)), scale=.2, name="e")
       e = e + 0. # fixes evalutation with tf.Variable()
   e = tf.reshape(e, [batch_size*num_gal, 2])
+  
+  e = tf.clip_by_norm(e, 1.)
 
   # print('e', e)
 
@@ -406,7 +410,55 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
   # Constant shear in the field
   if gamma is None:
     gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.05, name="gamma")
+  
+  """
+  def bijection_gamma(x, gmax):
+    return Scale(gmax)(Scale(2)(Shift([-.5, -.5])(Sigmoid()(x))))
+  
+  gamma = bijection_gamma(gamma, 0.2)
+  """
+  #gamma = tf.clip_by_value(gamma, -0.2, 0.2)
+  gamma = tf.clip_by_norm(gamma, 1.)
+  
+  # Apply same shear on all images
+  ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])
+  # ims = tf.transpose(ims, perm=[0, 2, 3, 1])
+  # ims = galflow.shear(ims, 
+  #                     gamma[:,0],
+  #                     gamma[:,1])
 
+  # ims = tf.transpose(ims, perm=[0, 3, 1, 2])
+  # ims = tf.reshape(ims, [batch_size*num_gal, nx, ny, 1])
+
+  im_sheared = shear_fourier(ims, gamma[:,0], gamma[:,1])
+
+  # if fit_centroid:
+  #   shift = ed.Normal(loc=tf.zeros((batch_size, num_gal,2)), scale=1., name="shift")
+  #   shift = shift + 0.
+  #   shift = tf.reshape(shift, [batch_size*num_gal,2])
+  #   shift_x = shift[:,0]
+  #   shift_y = shift[:,1]
+    
+  #   T = build_transform_matrix(shift_x, shift_y)
+
+  #   ims = perspective_transform(ims, T)
+
+  # Convolve the image with the PSF
+  interp_factor = interp_factor
+  padding_factor = padding_factor
+
+  # kpsf_shape = kpsf.shape
+  # kpsf = tf.repeat(tf.expand_dims(kpsf, 0), repeats=batch_size, axis=0)
+  # kpsf = tf.reshape(kpsf, [batch_size*kpsf_shape[0], kpsf_shape[1], kpsf_shape[2]])
+
+  # # handle batch_size
+  # profile = galflow.convolve(ims, kpsf,
+  #                     zero_padding_factor=padding_factor,
+  #                     interp_factor=interp_factor)[...,0]
+
+  profile = convolve_fourier(im_sheared, kpsf)
+  
+  """
   # Apply same shear on all images
   ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])
   ims = tf.transpose(ims, perm=[0, 2, 3, 1])
@@ -417,6 +469,7 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
   ims = tf.transpose(ims, perm=[0, 3, 1, 2])
   ims = tf.reshape(ims, [batch_size*num_gal, nx, ny, 1])
 
+  
   # Shift centroid
   # if (shift_x is None) or (shift_y is None):
   #   shift_x = tf.zeros(batch_size*num_gal,)
@@ -442,7 +495,7 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
   profile = galflow.convolve(ims, kpsf,
                       zero_padding_factor=padding_factor,
                       interp_factor=interp_factor)[...,0]
-
+  """
   profile = tf.reshape(profile, [batch_size, num_gal, nx, ny])
   if not display:
     k=10
@@ -451,6 +504,138 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
 
   # Returns likelihood
   return  ed.Normal(loc=profile, scale=sigma_e, name="obs")
+
+
+def sersic2morph_model2(batch_size=1, 
+                       num_gal=25, 
+                       stamp_size=64, 
+                       scale=0.03, 
+                       sigma_e=0.003, fixed_flux=False, kpsf=None, 
+                      flat_prior_e=False,
+                      fit_centroid=False,#shift_x=None, shift_y=None,
+                      interp_factor=1,
+                      padding_factor=1,
+                      hlr=None, n=None, flux=None, e=None, gamma=None, display=False):
+  """PGM:
+  - Sersic light profiles
+  - Varying intrinsic ellipticity
+  - Constant shear
+  """
+  # stamp size
+  nx = ny = stamp_size
+
+  # prior on Sersic size half light radius
+  if hlr is None:
+    log_l_hlr = ed.Normal(loc=-.68*tf.ones((batch_size, num_gal)), scale=.3, name="hlr")
+    hlr = tf.math.exp(log_l_hlr * _log10)
+  else:
+    hlr = tf.reshape(hlr, [-1])
+
+  # prior on Sersic index n
+  if n is None: 
+    log_l_n = ed.Normal(loc=.1*tf.ones((batch_size, num_gal)), scale=.39, name="n")
+    n = tf.math.exp(log_l_n * _log10)
+  #else:
+  n = tf.reshape(n, [-1])
+
+  # Flux
+  # F = 16.693710205567005 * tf.ones((batch_size, num_gal))
+  # F = tf.reshape(F, [-1])
+  if fixed_flux:
+    F = flux
+  else:
+    F = ed.Uniform(0.*tf.ones((batch_size, num_gal)), 50.*tf.ones((batch_size, num_gal)), name="F")
+  F = tf.reshape(F, [-1])
+
+  # Generate light profile
+  profile = lp.sersic(n=n, half_light_radius=hlr, flux=F, nx=nx, ny=ny, scale=scale)
+
+  # prior on intrinsic galaxy ellipticity
+  if e is None:
+    if flat_prior_e:
+      e = ed.Uniform(low=-.75*tf.ones([batch_size, num_gal, 2]), high=.75*tf.ones([batch_size, num_gal, 2]), name="e")
+      e = e + 0. # fixes evalutation with tf.Variable()
+    else:
+      e = ed.Normal(loc=tf.zeros((batch_size, num_gal, 2)), scale=.2, name="e")
+      e = e + 0. # fixes evalutation with tf.Variable()
+  e = tf.reshape(e, [batch_size*num_gal, 2])
+
+  e = tf.clip_by_norm(e, 1.)
+
+  # Apply intrinsic ellipticity on profiles the image
+  ims = tf.expand_dims(profile, -1)
+  ims = galflow.shear(ims, e[:,0], e[:,1])
+
+  # Constant shear in the field
+  if gamma is None:
+    gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.05, name="gamma")
+
+  gamma = tf.clip_by_norm(gamma, 1.)
+
+  # [batch_size, num_gal, nx, ny]
+  ims = tf.reshape(ims, [batch_size*num_gal, nx, ny, 1])
+  
+  # APPLY CONV
+  # Convolve the image with the PSF
+  interp_factor = interp_factor
+  padding_factor = padding_factor
+  # kpsf = get_gaussian_psf(scale, stamp_size, interp_factor, padding_factor)
+  # kpsf = get_cosmos_psf(stamp_size, scale)
+
+  ims = galflow.convolve(ims, kpsf,
+                      zero_padding_factor=padding_factor,
+                      interp_factor=interp_factor)[...,0]
+  
+  # Apply same shear on all images
+  ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])
+  ims = tf.transpose(ims, perm=[0, 2, 3, 1])
+  ims = galflow.shear(ims, 
+                      gamma[:,0],
+                      gamma[:,1])
+
+  ims = tf.transpose(ims, perm=[0, 3, 1, 2])
+  ims = tf.reshape(ims, [batch_size*num_gal, nx, ny, 1])
+
+  # Shift centroid
+  # if (shift_x is None) or (shift_y is None):
+  #   shift_x = tf.zeros(batch_size*num_gal,)
+  #   shift_y = tf.zeros(batch_size*num_gal,)
+  
+  if fit_centroid:
+    shift = ed.Normal(loc=tf.zeros((batch_size, num_gal,2)), scale=1., name="shift")
+    shift = shift + 0.
+    shift = tf.reshape(shift, [batch_size*num_gal,2])
+    shift_x = shift[:,0]
+    shift_y = shift[:,1]
+    
+    T = build_transform_matrix(shift_x, shift_y)
+
+    ims = perspective_transform(ims, T)
+
+  # Convolve the image with the PSF
+  interp_factor = interp_factor
+  padding_factor = padding_factor
+  # kpsf = get_gaussian_psf(scale, stamp_size, interp_factor, padding_factor)
+  # kpsf = get_cosmos_psf(stamp_size, scale)
+
+  kpsf_shape = kpsf.shape
+  kpsf = tf.repeat(tf.expand_dims(kpsf, 0), repeats=batch_size, axis=0)
+  kpsf = tf.reshape(kpsf, [batch_size*kpsf_shape[0], kpsf_shape[1], kpsf_shape[2]])
+
+  # handle batch_size
+  profile = galflow.convolve(ims, kpsf,
+                      zero_padding_factor=padding_factor,
+                      interp_factor=interp_factor)[...,0]
+  
+  profile = tf.reshape(ims, [batch_size, num_gal, nx, ny])
+  if not display:
+    k = 10
+    profile = profile[...,k:-k, k:-k]
+  # print(profile.shape)
+
+  # Returns likelihood
+  return  ed.Normal(loc=profile, scale=sigma_e, name="obs")
+
 
 import tensorflow_hub as hub
 
