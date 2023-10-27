@@ -537,6 +537,8 @@ def sersic2morph_model2(batch_size=1,
     n = tf.math.exp(log_l_n * _log10)
   #else:
   n = tf.reshape(n, [-1])
+  
+  n = tf.clip_by_value(n,  0.3, 6.2)
 
   # Flux
   # F = 16.693710205567005 * tf.ones((batch_size, num_gal))
