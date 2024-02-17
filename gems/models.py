@@ -762,7 +762,7 @@ def dgm_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003
 
   # Constant shear in the field
   if gamma is None:
-    gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.1, name="gamma")
+    gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.15, name="gamma")
 
   # Apply same shear on all images
   ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])
@@ -847,11 +847,12 @@ def shear_fourier(ims, g1, g2, interp_factor=1, stamp_size=128):
 
 def convolve_fourier(imk, imkpsfs):
   batch_size, num_gal, nx, ny = imk.shape
-
-  kpsf_shape = imkpsfs.shape
-  imkpsfs = tf.repeat(tf.expand_dims(imkpsfs, 0), repeats=batch_size, axis=0)
-  imkpsfs = tf.reshape(imkpsfs, [batch_size, kpsf_shape[0], kpsf_shape[1], kpsf_shape[2]])
   
+  if len(imkpsfs.shape)==3:
+    kpsf_shape = imkpsfs.shape
+    imkpsfs = tf.repeat(tf.expand_dims(imkpsfs, 0), repeats=batch_size, axis=0)
+    imkpsfs = tf.reshape(imkpsfs, [batch_size, kpsf_shape[0], kpsf_shape[1], kpsf_shape[2]])
+
   # Reconvolve with target PSF
   im_reconv = tf.signal.ifft2d(tf.signal.ifftshift(imk * imkpsfs ))
 
