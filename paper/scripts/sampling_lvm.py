@@ -30,10 +30,10 @@ STAMP_SIZE = 128 # width of a postage stamp in pixels
 PIXEL_SCALE = 0.03 # pixel size in arcsec
 N = int(np.sqrt(NUM_GAL))
 
-g1 = -0.03
-g2 = +0.03
+g1 = -0.05
+g2 = +0.05
 
-out = gen_obs(NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max_hlr=0.6, g1=g1, g2=g2)
+out = gen_obs(NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max_hlr=0.4, g1=g1, g2=g2)
     
 y, true_gamma, z_samples, indices, imkpsfs, mag_auto_list, z_phot_list, flux_radius_list = out
 
@@ -66,13 +66,6 @@ def target_log_prob_fn(prior_z, gamma):
       gamma=gamma*s_gamma,
       obs=obs_)
 
-
-def target_log_prob_fn(prior_z, gamma):
-    return log_prob(
-        prior_z=prior_z,
-        gamma=gamma*s_gamma,
-        obs=obs_)
-
 def loss_fn(lz, gamma):
     return - target_log_prob_fn(lz, gamma)
   
@@ -98,8 +91,10 @@ with tf.Session() as sess:
 print('g_MAP:', g_*s_gamma)
 
 # Initialize the HMC transition kernel.
-num_results = int(7_000)
-num_burnin_steps = int(200)
+#num_results = int(100)
+#num_burnin_steps = int(100)
+num_results = int(3000)
+num_burnin_steps = int(150)
 adaptive_hmc = tfp.mcmc.SimpleStepSizeAdaptation(
     tfp.mcmc.HamiltonianMonteCarlo(
         target_log_prob_fn=target_log_prob_fn,
@@ -115,7 +110,10 @@ def get_samples():
                       lz_,
                       g_,
         ],
-        kernel=adaptive_hmc)
+        kernel=adaptive_hmc,
+        trace_fn=lambda _, pkr: [pkr.inner_results.accepted_results.step_size,
+                                 pkr.inner_results.is_accepted]
+    )
     return samples, trace
   
 samples, trace = get_samples()
@@ -130,7 +128,8 @@ start = time.time()
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
-    lz_samples_, gamma_samples_, gamma_true_ = sess.run([lz_samples, gamma_samples, gamma_true])
+    #lz_samples_, gamma_samples_, gamma_true_ = sess.run([lz_samples, gamma_samples, gamma_true])
+    lz_samples_, gamma_samples_, gamma_true_, trace_sz, trace_ia = sess.run([lz_samples, gamma_samples, gamma_true, trace[0], trace[1]])
     
 end = time.time()
 
@@ -143,3 +142,5 @@ np.save('./paper/scripts/results/mcmc_init/imkpsfs.npy', imkpsfs)
 np.save('./paper/scripts/results/mcmc_init/mag_auto_list.npy', mag_auto_list)
 np.save('./paper/scripts/results/mcmc_init/z_phot_list.npy', z_phot_list)
 np.save('./paper/scripts/results/mcmc_init/flux_radius_list.npy', flux_radius_list)
+np.save('./paper/scripts/results/mcmc_init/trace_ia.npy', trace_ia)
+np.save('./paper/scripts/results/mcmc_init/last_step_size.npy', trace_sz[-1:])

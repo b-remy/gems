@@ -399,7 +399,7 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
       e = e + 0. # fixes evalutation with tf.Variable()
   e = tf.reshape(e, [batch_size*num_gal, 2])
   
-  e = tf.clip_by_norm(e, 1.)
+  e = tf.clip_by_norm(e, 1., axes=1)
 
   # print('e', e)
 
@@ -797,7 +797,7 @@ def dgm_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003
 
   # # handle batch_size
   # profile = galflow.convolve(ims, kpsf,
-  #                     zero_padding_factor=padding_factor,
+  #                     zero_padding_factor=pdding_factor,
   #                     interp_factor=interp_factor)[...,0]
 
   profile = convolve_fourier(im_sheared, kpsf)

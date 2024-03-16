@@ -48,6 +48,28 @@ def intertwine(img1, img2):
     
     ims_tot = tf.transpose(ims_tot, [0, 3, 1, 2])
     return ims_tot[0]
+  
+def intertwine_batch(img1, img2):
+    """
+    Args: [BATCH_SIZE, NUM_IMAGES, WIDTH, HEIGHT]
+    Return: [BATCH_SIZE, NUM_IMAGES*2, WIDTH, HEIGHT]
+    """
+    NUM_IMAGES = img1.shape[1]
+    
+    #img1 = tf.expand_dims(img1, 0)
+    #img2 = tf.expand_dims(img2, 0)
+
+    pos_orig = tf.cast(tf.expand_dims(tf.one_hot(indices=tf.range(NUM_IMAGES)*2, depth=NUM_IMAGES*2),0), img1.dtype)
+    pos_rot = tf.cast(tf.expand_dims(tf.one_hot(indices=tf.range(NUM_IMAGES)*2+1, depth=NUM_IMAGES*2),0), img1.dtype)
+    
+    img1_reshape = tf.transpose(img1, [0, 2, 3, 1])
+    img2_reshape = tf.transpose(img2, [0, 2, 3, 1])
+    
+    ims_tot = tf.einsum('...i,...ik', img1_reshape, pos_orig)
+    ims_tot = ims_tot + tf.einsum('...i,...ik', img2_reshape, pos_rot)
+    
+    ims_tot = tf.transpose(ims_tot, [0, 3, 1, 2])
+    return ims_tot[0]
 
 def double_rotate_images(images):
     """
@@ -74,7 +96,7 @@ def double_rotate_images(images):
     
     return ims_tot
 
-def gen_obs(NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max_hlr=0.6, g1=None, g2=None, return_only_theta_obs=False):
+def gen_obs(NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max_hlr=0.5, g1=None, g2=None, return_only_theta_obs=False):
 
     # Priors
     std_gamma = 0.15
@@ -149,7 +171,13 @@ def gen_obs(NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max_hlr=0.6, g1=None,
 
     imkpsfs = tf.cast(tf.concat(psfs, axis=0), tf.complex64)
     imkpsfs2 = tf.cast(tf.concat(psfs2, axis=0), tf.complex64)
-
+    
+    print()
+    print(imkpsfs.shape)
+    print(imkpsf2.shape)
+    print()
+    imkpsfs = intertwine(imkpsfs, imkpsfs2)
+    
     # get random code
     z = code({'mag_auto':mag_auto_g, 
                 'flux_radius':flux_radius_g, 
@@ -159,22 +187,28 @@ def gen_obs(NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max_hlr=0.6, g1=None,
     reconstruction = decoder(z)
 
     ims = tf.reshape(reconstruction, (1, NUM_GAL//2, STAMP_SIZE, STAMP_SIZE))
-
-    g1 = gamma_samples[:,0]
-    g2 = gamma_samples[:,1]
     
-    im_sheared = shear_fourier(ims, g1, g2)
-
-    ims = convolve_fourier(im_sheared, imkpsfs)
+    #imkpsfs = tf.reshape(imkpsfs, (1, NUM_GAL//2, STAMP_SIZE, STAMP_SIZE))    
     
+    imkpsfs = tf.reshape(imkpsfs, (1, NUM_GAL, STAMP_SIZE, STAMP_SIZE))    
+
     # double and rotate each galaxy
     ims_tot = double_rotate_images(ims)
     
+    #imkpsfs = double_rotate_images(imkpsfs)
+    
+    g1 = gamma_samples[:,0]
+    g2 = gamma_samples[:,1]
+    
+    im_sheared = shear_fourier(ims_tot, g1, g2)
+
+    ims = convolve_fourier(im_sheared, imkpsfs)
+    
     obs = ims_tot + tf.random_normal([1, NUM_GAL, STAMP_SIZE, STAMP_SIZE]) * NOISE_LEVEL
 
-    imkpsfs = intertwine(imkpsfs, imkpsfs2)
+    #imkpsfs = intertwine(imkpsfs, imkpsfs2)
     
-    if return_only_theta_obs:
+    if not(return_only_theta_obs):
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
 
@@ -186,7 +220,9 @@ def gen_obs(NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max_hlr=0.6, g1=None,
             ])
 
         y, gamma_samples, z_samples, imkpsfs = ouput
-
+        print()
+        print("gen obs with g1={} g2={}".format(gamma_samples[:,0], gamma_samples[:,1]))
+        print()
         # return observations, parameters and catalog selection
         return y, gamma_samples, z_samples, indices, imkpsfs, mag_auto_list, z_phot_list, flux_radius_list
       
@@ -200,7 +236,9 @@ def gen_obs(NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max_hlr=0.6, g1=None,
             ])
 
         y, gamma_samples = ouput
-
+        print()
+        print("gen obs with g1={} g2={}".format(gamma_samples[:,0], gamma_samples[:,1]))
+        print()
         # return observations, parameters and catalog selection
         return y, gamma_samples, indices
       
@@ -250,7 +288,8 @@ def gen_batch_obs(batch_size, NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max
 
         #store PSF and rotated PSF
         psfs.append(imkpsf)
-        #psfs2.append(imkpsf2)
+        psfs2.append(imkpsf2)
+
         indices.append(ind)
 
         mag_auto_list.append(cat.param_cat['mag_auto'][cat.orig_index[ind]])
@@ -261,9 +300,18 @@ def gen_batch_obs(batch_size, NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max
     z_phot_g = tf.convert_to_tensor(z_phot_list)
     flux_radius_g = tf.convert_to_tensor(flux_radius_list)
 
-    imkpsfs = tf.cast(tf.concat(psfs, axis=0), tf.complex64)
-    #imkpsfs2 = tf.cast(tf.concat(psfs2, axis=0), tf.complex64)
+    imkpsfs = tf.reshape(tf.cast(tf.concat(psfs, axis=0), tf.complex64),
+                         (batch_size, NUM_GAL//2, STAMP_SIZE, STAMP_SIZE)
+                        )
+    
+    imkpsfs2 = tf.reshape(tf.cast(tf.concat(psfs2, axis=0), tf.complex64),
+                         (batch_size, NUM_GAL//2, STAMP_SIZE, STAMP_SIZE)
+                         )
+    
 
+    imkpsfs = intertwine(imkpsfs, imkpsfs2)
+
+    
     # get random code
     z = code({'mag_auto':mag_auto_g, 
                 'flux_radius':flux_radius_g, 
@@ -273,18 +321,17 @@ def gen_batch_obs(batch_size, NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max
     reconstruction = decoder(z)
 
     ims = tf.reshape(reconstruction, (batch_size, NUM_GAL//2, STAMP_SIZE, STAMP_SIZE))
-    imkpsfs = tf.reshape(imkpsfs, (batch_size, NUM_GAL//2, STAMP_SIZE, STAMP_SIZE))
-    
+
+    # double and rotate each galaxy
+    ims_tot = double_rotate_images(ims)
+
     g1 = gamma_samples[:,0]
     g2 = gamma_samples[:,1]
     
-    im_sheared = shear_fourier(ims, g1, g2)
+    im_sheared = shear_fourier(ims_tot, g1, g2)
 
     ims = convolve_fourier(im_sheared, imkpsfs)
-    
-    # double and rotate each galaxy
-    ims_tot = double_rotate_images(ims)
-    
+        
     obs = ims_tot + tf.random_normal([batch_size, NUM_GAL, STAMP_SIZE, STAMP_SIZE]) * NOISE_LEVEL
 
     ouput = sess.run([
