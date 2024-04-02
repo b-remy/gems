@@ -15,12 +15,37 @@ from galflow.python.tfutils.transformer import perspective_transform
 
 from gems.psf import get_gaussian_psf, get_cosmos_psf
 from gems.shear import shear_map
-
 # import tensorflow_addons as tfa
 
 _log10 = tf.math.log(10.)
 _pi = np.pi
 
+
+def double_rotate_images(images):
+    """
+    Args: [batch, NUM_IMAGES, WIDTH, HEIGHT]
+    Return: [batch, NUM_IMAGES*2, WIDTH, HEIGHT]
+    """
+    
+    NUM_IMAGES = images.shape[1]
+    
+    ims_rot = tf.reshape(images, [-1, images.shape[2], images.shape[3], 1])
+    ims_rot = tf.image.rot90(ims_rot)
+    ims_rot = tf.reshape(ims_rot, [images.shape[0], NUM_IMAGES, images.shape[2], images.shape[3]])
+    
+    pos_orig = tf.cast(tf.expand_dims(tf.one_hot(indices=tf.range(NUM_IMAGES)*2, depth=NUM_IMAGES*2),0), images.dtype)
+    pos_rot = tf.cast(tf.expand_dims(tf.one_hot(indices=tf.range(NUM_IMAGES)*2+1, depth=NUM_IMAGES*2),0), images.dtype)
+    
+    ims_reshape = tf.transpose(images, [0, 2, 3, 1])
+    ims_rot_reshape = tf.transpose(ims_rot, [0, 2, 3, 1])
+    
+    ims_tot = tf.einsum('...i,...ik', ims_reshape, pos_orig)
+    ims_tot = ims_tot + tf.einsum('...i,...ik', ims_rot_reshape, pos_rot)
+    
+    ims_tot = tf.transpose(ims_tot, [0, 3, 1, 2])
+    
+    return ims_tot
+  
 ### Forward models
 
 def sersic_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003,fixed_flux=False):
@@ -355,7 +380,7 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
                       interp_factor=1,
                       padding_factor=1,
                       hlr=None, n=None, flux=None, e=None, gamma=None, display=False):
-  """PGM:
+  """PGM:sersic2morph_model
   - Sersic light profiles
   - Varying intrinsic ellipticity
   - Constant shear
@@ -810,6 +835,76 @@ def dgm_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003
 
   # Returns likelihood
   return  ed.Normal(loc=profile, scale=sigma_e, name="obs")
+
+##################################################
+# LVM model using one latent for pairs of galaxies
+##################################################
+
+def dgm_model_pairs(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003, kpsf=None, fit_centroid=False, 
+                    mag_auto_list=None, z_phot_list=None, flux_radius_list=None,
+                    interp_factor=1, padding_factor=1,
+                    gamma=None, display=False):
+  
+  """
+  all inputs are of shape num_gal//2
+  but kpsf is aready double and rotated
+  """
+  
+  # stamp size
+  nx = ny = stamp_size
+
+  # Conditional parameters
+  # handle batch_size
+
+  mag_auto_g = tf.reshape(tf.convert_to_tensor(mag_auto_list), [1,-1])
+  z_phot_g = tf.reshape(tf.convert_to_tensor(z_phot_list), [1,-1])
+  flux_radius_g = tf.reshape(tf.convert_to_tensor(flux_radius_list), [1,-1])
+  
+  mag_auto_g = tf.reshape(tf.repeat(mag_auto_g, repeats=batch_size, axis=0), [batch_size*num_gal,])
+  z_phot_g = tf.reshape(tf.repeat(z_phot_g, repeats=batch_size, axis=0), [batch_size*num_gal,])
+  flux_radius_g = tf.reshape(tf.repeat(flux_radius_g, repeats=batch_size, axis=0), [batch_size*num_gal,])
+
+  # Generate light profiles
+  prior_z = ed.Normal(loc=tf.zeros([batch_size, num_gal, 16]), scale=1, name="prior_z")
+  prior_z = tf.reshape(prior_z, [batch_size*num_gal, 16])
+  
+  z = code({'mag_auto':mag_auto_g, 
+            'flux_radius':flux_radius_g, 
+            'zphot':z_phot_g , 
+            'random_normal':prior_z})
+
+  ims = decoder(z)
+  
+  # Constant shear in the field
+  if gamma is None:
+    gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.15, name="gamma")    
+  
+  # Apply same shear on all images
+  ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])
+
+  # double and rotate each galaxy
+  ims = double_rotate_images(ims)
+
+  
+  ims = tf.reshape(ims, [batch_size, num_gal*2, nx, ny])
+
+  
+  im_sheared = shear_fourier(ims, gamma[:,0], gamma[:,1])
+
+  # Convolve the image with the PSF
+  profile = convolve_fourier(im_sheared, kpsf)
+
+  profile = tf.reshape(profile, [batch_size, num_gal*2, nx, ny])
+  if not display:
+    k = 10
+    profile = profile[...,k:-k, k:-k]
+
+  # Returns likelihood
+  return  ed.Normal(loc=profile, scale=sigma_e, name="obs")
+
+##################################################
+##################################################
+
 
 def shear_fourier(ims, g1, g2, interp_factor=1, stamp_size=128):
   """
