@@ -11,6 +11,7 @@ from galsim.bounds import _BoundsI
 
 from gems.models import shear_fourier, convolve_fourier, dgm_model
 from gems.ed_utils import make_value_setter, make_log_joint_fn
+from gems.nn import encoder, decoder, code
 
 NUM_GAL = 144 # number of galaxies
 NOISE_LEVEL = 0.01 # gaussian noise standard deviation
@@ -105,15 +106,11 @@ def gen_obs(NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max_hlr=0.5, max_flux
 
     N = int(np.sqrt(NUM_GAL))
     # Load auto encoder weights
-    encoder = hub.Module('../deep_galaxy_models/modules/vae_16/encoder')
-    decoder = hub.Module('../deep_galaxy_models/modules/vae_16/decoder')
-    code = hub.Module('../deep_galaxy_models/modules/latent_maf_16/code_sampler')
-    
+
     cat = galsim.COSMOSCatalog(sample='25.2',
                                max_hlr=max_hlr,
                                max_flux=max_flux,
-                               dir='/linkhome/rech/genpuc01/utb76xl/shear-projects/shear-projects/gems/paper/galsim_catalog/COSMOS_25.2_training_sample')
-    
+    ) 
     # select random cosmos galaxies indices
     gal_index = cat.selectRandomIndex(NUM_GAL//2)
     
@@ -357,15 +354,11 @@ def gen_obs_no_pairs(NUM_GAL, NOISE_LEVEL, STAMP_SIZE, PIXEL_SCALE, max_hlr=0.5,
 
     N = int(np.sqrt(NUM_GAL))
     # Load auto encoder weights
-    encoder = hub.Module('../deep_galaxy_models/modules/vae_16/encoder')
-    decoder = hub.Module('../deep_galaxy_models/modules/vae_16/decoder')
-    code = hub.Module('../deep_galaxy_models/modules/latent_maf_16/code_sampler')
     
     cat = galsim.COSMOSCatalog(sample='25.2',
                                max_hlr=max_hlr,
                                max_flux=max_flux,
-                               dir='/linkhome/rech/genpuc01/utb76xl/shear-projects/shear-projects/gems/paper/galsim_catalog/COSMOS_25.2_training_sample')
-    
+    ) 
     # select random cosmos galaxies indices
     gal_index = cat.selectRandomIndex(NUM_GAL)
     

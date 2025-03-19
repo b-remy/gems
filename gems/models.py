@@ -15,6 +15,7 @@ from galflow.python.tfutils.transformer import perspective_transform
 
 from gems.psf import get_gaussian_psf, get_cosmos_psf
 from gems.shear import shear_map
+from gems.nn import encoder, decoder, code
 # import tensorflow_addons as tfa
 
 _log10 = tf.math.log(10.)
@@ -443,7 +444,7 @@ def sersic2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigm
   gamma = bijection_gamma(gamma, 0.2)
   """
   #gamma = tf.clip_by_value(gamma, -0.2, 0.2)
-  gamma = tf.clip_by_norm(gamma, 1.)
+  gamma = tf.clip_by_norm(gamma, clip_by_norm=0.9, axes=0)
   
   # Apply same shear on all images
   ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])
@@ -663,13 +664,6 @@ def sersic2morph_model2(batch_size=1,
   # Returns likelihood
   return  ed.Normal(loc=profile, scale=sigma_e, name="obs")
 
-
-import tensorflow_hub as hub
-
-encoder = hub.Module('../deep_galaxy_models/modules/vae_16/encoder')
-decoder = hub.Module('../deep_galaxy_models/modules/vae_16/decoder')
-code = hub.Module('../deep_galaxy_models/modules/latent_maf_16/code_sampler')
-
 def dgm2morph_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003, kpsf=None, fit_centroid=False, 
                     mag_auto_list=None, z_phot_list=None, flux_radius_list=None,
                     interp_factor=1, padding_factor=1,
@@ -788,6 +782,8 @@ def dgm_model(batch_size=1, num_gal=25, stamp_size=64, scale=0.03, sigma_e=0.003
   # Constant shear in the field
   if gamma is None:
     gamma = ed.Normal(loc=tf.zeros((batch_size, 2)), scale=0.15, name="gamma")
+
+  gamma = tf.clip_by_norm(gamma, clip_norm=0.9, axes=0)
 
   # Apply same shear on all images
   ims = tf.reshape(ims, [batch_size, num_gal, nx, ny])

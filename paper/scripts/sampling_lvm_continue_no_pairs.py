@@ -2,7 +2,6 @@
 #from absl import flags
 
 import os
-os.chdir('../..')
 
 import tensorflow_hub as hub
 import tensorflow as tf

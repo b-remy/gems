@@ -2,8 +2,6 @@
 #from absl import flags
 
 import os
-os.chdir('../..')
-
 import tensorflow_hub as hub
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -79,7 +77,7 @@ gamma = tf.Variable(tf.zeros((batch_size, 2)), trainable=True, dtype=tf.float32)
 loss = loss_fn(lz, gamma)
 
 # Define the optimizer
-optimizer = tf.train.AdagradOptimizer(learning_rate=0.1)
+optimizer = tf.train.AdagradOptimizer(learning_rate=0.05)
 train = optimizer.minimize(loss, var_list=[lz, gamma])
 
 # initialize the variables
@@ -99,8 +97,8 @@ print('g_MAP:', g_*s_gamma)
 #num_results = int(100)
 #num_burnin_steps = int(100)
 
-num_results = int(1500)
-num_burnin_steps = int(300)
+num_results = int(20_000)
+num_burnin_steps = int(500)
 
 #num_results = int(2)
 #num_burnin_steps = int(1)
@@ -145,14 +143,14 @@ end = time.time()
 
 print((end - start)/60)
 
-folder = "mcmc_obs_no_pairs"
+folder = "test"
 
-np.save('./paper/scripts/results/{}/gamma.npy'.format(folder), gamma_samples_)
-np.save('./paper/scripts/results/{}/lz.npy'.format(folder), lz_samples_)
-np.save('./paper/scripts/results/{}/y.npy'.format(folder), y)
-np.save('./paper/scripts/results/{}/imkpsfs.npy'.format(folder), imkpsfs)
-np.save('./paper/scripts/results/{}/mag_auto_list.npy'.format(folder), mag_auto_list)
-np.save('./paper/scripts/results/{}/z_phot_list.npy'.format(folder), z_phot_list)
-np.save('./paper/scripts/results/{}/flux_radius_list.npy'.format(folder), flux_radius_list)
-np.save('./paper/scripts/results/{}/trace_ia.npy'.format(folder), trace_ia)
-np.save('./paper/scripts/results/{}/last_step_size.npy'.format(folder), trace_sz[-1:])
+np.save('./{}/gamma.npy'.format(folder), gamma_samples_)
+np.save('./{}/lz.npy'.format(folder), lz_samples_)
+np.save('./{}/y.npy'.format(folder), y)
+np.save('./{}/imkpsfs.npy'.format(folder), imkpsfs)
+np.save('./{}/mag_auto_list.npy'.format(folder), mag_auto_list)
+np.save('./{}/z_phot_list.npy'.format(folder), z_phot_list)
+np.save('./{}/flux_radius_list.npy'.format(folder), flux_radius_list)
+np.save('./{}/trace_ia.npy'.format(folder), trace_ia)
+np.save('./{}/last_step_size.npy'.format(folder), trace_sz[-1:])
